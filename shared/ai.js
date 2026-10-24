@@ -73,7 +73,12 @@
         }
         if (e.actor !== o.id) continue;
         if (e.type === 'broadcast_cast') {
-          cand = new Set([...cand].filter(g => galaxyDistance(g, e.target) <= e.distance));
+          // 公开的只有这张牌的射程：发布者在目标星系 radius 格以内。
+          // 超距广播（radius 为 null）不构成任何约束，一个候选都不能划掉。
+          // ⚠️ 这里绝不能去用「实际距离」——那等于让 AI 拿到人眼看不到的坐标信息。
+          if (e.radius != null) {
+            cand = new Set([...cand].filter(g => galaxyDistance(g, e.target) <= e.radius));
+          }
         } else if (e.type === 'broadcast_response') {
           const lim = CARD_DEFS[e.card] ? CARD_DEFS[e.card].dist : 2;
           cand = new Set([...cand].filter(g => galaxyDistance(g, e.target) <= lim));

@@ -364,9 +364,15 @@
         chooseDeadline: null,
       };
 
-      // 只公布「谁朝哪儿发了哪种广播」，不公布合作/伪装——那一面结算时才翻
-      log(`${p.name} 发布「${familyName(card.key)}」→ ${GALAXY_NAMES[targetGalaxy]}（距离 ${d}）`, 'broadcast');
-      ev('broadcast_cast', { actor: p.id, family: hideFace(card.key), target: targetGalaxy, distance: d });
+      // 只公布「谁朝哪儿发了哪种广播」，不公布合作/伪装——那一面结算时才翻。
+      // ⚠️ 更不能公布**实际距离**（发布者到目标星系的真实格数）：
+      //    目标星系是公开的，距离一公布，发布者的位置就等于公开了。
+      //    公开的只有「这张牌的射程」——即「发布者在目标星系 N 格以内」，
+      //    这正是观察者本来就能推出来的约束（见设计文档 2.4.1）。
+      const radius = def.dist === INF ? null : def.dist;
+      const rangeText = radius === null ? '任意星系' : `距目标 ≤ ${radius} 格`;
+      log(`${p.name} 发布「${familyName(card.key)}」→ ${GALAXY_NAMES[targetGalaxy]}（${rangeText}）`, 'broadcast');
+      ev('broadcast_cast', { actor: p.id, family: hideFace(card.key), target: targetGalaxy, radius });
       markActed();
       return { ok: true };
     }

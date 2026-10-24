@@ -2,7 +2,7 @@
 
 > 给下一个接手的 AI 或人类开发者。读完这一份，你应该能在 10 分钟内跑起来、30 分钟内改第一个需求。
 >
-> 项目版本：**v1.0.14**（2026-10-24）
+> 项目版本：**v1.0.15**（2026-10-24）
 > 线上：<https://darkforest.dpdns.org>（Cloudflare Worker `dark-forest` + Durable Object）
 > APK：`黑暗森林-v1.0.14.apk`（644 KB，versionCode 20，含 5 档图标 + 自适应图标 + 两张背景）
 
@@ -101,7 +101,7 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 测试 | — | 267（规则）+ 19（UI 冒烟）+ 34（DO） |
 | 观战 / 回放 / 战绩 | — | ⬜ 未开始 |
 | 房主移交 / 踢人 | — | ⬜ 未开始 |
-| 真机验证 APK | — | ⚠️ v1.0.14 已出包（签名可覆盖升级），仍未在真安卓机跑过 |
+| 真机验证 APK | — | ⚠️ v1.0.15 已出包（签名可覆盖升级），仍未在真安卓机跑过 |
 
 ---
 
@@ -150,10 +150,11 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 免费额度 | DO 每天 10 万请求 / 10 万行写；人机局约 125 请求/局 | 一天 300 局左右，正常玩用不完；`python3 tools/usage.py` 可查 |
 | 断线重连 | 靠 localStorage token 回原席位 | 换设备/清缓存会丢席位 |
 | 隐藏目标模式更粗野 | 看不到来袭打击，谁也没法临场补掩体/买飞船；AI 同样看不到，所以不会提前建盾 | 这是设计意图（把飞行窗口从"补盾"变成"赌命"）；实测全 AI 局仍能收尾，只是更快见血 |
-| APK 只验证到「装得上」 | v1.0.14 已重打包并核对签名/资源同源，但仍未在真机跑过 | 找一台安卓机装上，重点测同一个 Wi-Fi（8080 端口、`setAllowUniversalAccessFromFileURLs`） |
+| APK 只验证到「装得上」 | v1.0.15 已重打包并核对签名/资源同源，但仍未在真机跑过 | 找一台安卓机装上，重点测同一个 Wi-Fi（8080 端口、`setAllowUniversalAccessFromFileURLs`） |
 | 房间不持久 | 内存房间 3 小时无人在线即回收；DO 房间靠存储 | 长局别中途全退 |
 | 1.0.4 及更早只能跳浏览器 | 那些版本的更新是 `openUrl` 交给系统浏览器，多点两下、还得手动点安装包 | 从 1.0.5 起是应用内下载 + 直接唤起安装器；旧版需手动装一次 |
 | 1.0.1/1.0.2 无法自更新 | 那两版的检测代码用相对路径 + 服务端没给静态 CORS，属于"装上去就再也收不到提示" | 让用户手动装一次 v1.0.3；从 1.0.3 起提示链路才通 |
+| 广播不泄露坐标 | 战报/事件里广播**只给射程**（`radius`），不给实际距离（`distance` 这个字段在广播事件里根本不存在） | 目标星系是公开的，实际距离一公开，发布者坐标就公开了。AI 那边同样只准用 `radius`——用它反推位置才和人眼看到的一样多 |
 | 域名迁移 | 1.0.14 起 `DF_SERVER` 全部指向 **darkforest.dpdns.org**；`shuwang.dpdns.org` 仍挂在同一个 Worker 上（老安装包里烙的是旧地址，删了它们就没法更新），两个自定义域名都写在 `worker/wrangler.toml` 的 routes 里 |
 | 更新弹窗的「新功能」来自 apk.json | `notes` 是目标版本的清单，`history` 是全部版本；前端按「本机版本 < v ≤ 目标版本」聚合，老版本用户一次看到这一跳跨过的全部改动。都来自 `apk/release-notes.json` | 每次发版在 `apk/release-notes.json` 加一条，键名必须和 manifest 的 versionName 一模一样；**永远只有一个整包，不做逐版本递进** |
 | 下载入口靠约定 | 前端只看 `/download/apk.json` 在不在；重装环境忘了跑 `apk/build.sh` 就不会出现入口 | 发版流程：先 `apk/build.sh`（顺带同步 web/download），再 `worker` 部署 |
@@ -200,9 +201,9 @@ HANDOFF.md                  本文件
 三体黑暗森林桌游-网页化设计与AI方案.md   完整设计文档（1240 行）
 README.md                   项目说明与运行方式
 shared/ server/ worker/ web/ apk/ game/ tools/
-黑暗森林-v1.0.14.apk        现成安装包（v1.5 也留着，用于回退对照）
-desktop/dist/黑暗森林-1.0.14-win64-setup.exe  Windows 安装程序（104 MB，NSIS）
-desktop/dist/黑暗森林-win64-v1.0.14.zip       Windows 免安装版（140 MB）
+黑暗森林-v1.0.15.apk        现成安装包（v1.5 也留着，用于回退对照）
+desktop/dist/黑暗森林-1.0.15-win64-setup.exe  Windows 安装程序（112 MB，NSIS）
+desktop/dist/黑暗森林-win64-v1.0.15.zip       Windows 免安装版（144 MB）
 
 GitHub：https://github.com/tediandeguandian/darkforest-web
   · 代码已推 main 分支（144 个文件，不含 node_modules 与构建产物）

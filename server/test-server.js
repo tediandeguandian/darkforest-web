@@ -1117,5 +1117,53 @@ ok(viewFor(gH, 'p2').events.every(e => e.type !== 'strike_cast' || e.target === 
 
 }
 
+// 25. 广播不得泄露发布者的实际位置
+//    战报里出现「距离 N」＝把发布者到目标星系的真实格数公开了；
+//    目标星系是公开的，距离一公开，坐标就等于公开了。
+//    唯一能公开的是「这张牌的射程」——即发布者在目标星系 N 格以内。
+console.log('=== 25. 广播不泄露实际距离（只给射程） ===');
+{
+  // 25.1 实际距离 1、牌射程 2：战报必须写「≤ 2 格」，不能写「距离 1」
+  const g25 = createGame(['甲', '乙'], { strikeTarget: 'open' });
+  const S25 = g25.state();
+  S25.players[0].galaxy = 1;      // 甲在 1 号
+  S25.players[1].galaxy = 6;      // 乙在 6 号（离得远，够不着）
+  S25.players[0].energy = 10;
+  S25.players[0].hand = [{ uid: 'z1', key: 'cosmic_disg' }];   // 宇宙广播·伪装，射程 2
+  S25.currentIdx = 0; S25.step = 'action';
+  g25.playBroadcast('p0', 'z1', 2);                            // 目标 2 号 → 实际距离 1
+
+  const log25 = S25.log[0].text;
+  ok(!/距离\s*\d/.test(log25), '战报不得出现「距离 N」：' + log25);
+  ok(!/距目标\s*≤\s*1\s*格/.test(log25), '战报不得把实际距离当成射程：' + log25);
+  ok(/距目标\s*≤\s*2\s*格/.test(log25), '战报应写牌的射程（2 格）：' + log25);
+
+  // 25.2 事件里不能有实际距离，只能有射程
+  const ev25 = S25.events.filter(e => e.type === 'broadcast_cast').pop();
+  ok(ev25 && ev25.distance === undefined, '事件不得携带实际距离，实际 ' + JSON.stringify(ev25));
+  ok(ev25 && ev25.radius === 2, '事件只应给射程 radius=2，实际 ' + JSON.stringify(ev25));
+
+  // 25.3 旁观者拿到的战报与事件都一样干净
+  const v25 = viewFor(g25, 'p1');
+  ok(!/距离\s*\d/.test(v25.log[0].text), '旁观者战报同样不得出现实际距离');
+  const vEv = v25.events.filter(e => e.type === 'broadcast_cast').pop();
+  ok(vEv && vEv.distance === undefined, '旁观者事件同样不得带实际距离');
+  ok(!/"distance"/.test(JSON.stringify(v25.events)), '整条事件流里都不该有 distance 字段');
+
+  // 25.4 超距广播：射程 ∞，不构成任何约束
+  const g25b = createGame(['甲', '乙'], { strikeTarget: 'open' });
+  const S25b = g25b.state();
+  S25b.players[0].galaxy = 1; S25b.players[1].galaxy = 9;
+  S25b.players[0].energy = 10;
+  S25b.players[0].hand = [{ uid: 'y1', key: 'ftl_coop' }];     // 超距广播·合作
+  S25b.currentIdx = 0; S25b.step = 'action';
+  g25b.playBroadcast('p0', 'y1', 7);                            // 目标 7 号
+  const log25b = S25b.log[0].text;
+  ok(!/距离\s*\d/.test(log25b), '超距广播的战报也不得出现实际距离：' + log25b);
+  ok(/任意星系/.test(log25b), '超距广播应写「任意星系」：' + log25b);
+  const ev25b = S25b.events.filter(e => e.type === 'broadcast_cast').pop();
+  ok(ev25b && ev25b.radius === null, '超距广播的 radius 应为 null（无约束）');
+}
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail?1:0);
