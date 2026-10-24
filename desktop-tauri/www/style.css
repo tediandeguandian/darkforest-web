@@ -547,7 +547,7 @@ body{background:transparent}   /* 底色交给 html + body::before，别在这�
 /* 光速飞船：留着保命，不能主动打出 */
 .pcard.reserved{border-top:3px solid #d8a53a;background-image:linear-gradient(180deg,rgba(216,165,58,.10),transparent 45%)}
 .pcard.reserved .pc-type{color:#d8a53a}
-.pcard.reserved::after{content:'仅挨打时';position:absolute;right:6px;bottom:6px;font-size:9px;letter-spacing:.5px;color:#d8a53a;opacity:.85}
+.pcard.reserved::after{content:'仅被打击时';position:absolute;right:6px;bottom:6px;font-size:9px;letter-spacing:.5px;color:#d8a53a;opacity:.85}
 .pc-glyph{position:absolute;right:5px;bottom:26px;font-size:40px;font-weight:900;line-height:1;color:rgba(20,20,40,.06);pointer-events:none}
 .pc-top{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1}
 .pc-cost{color:#a3621a;font-family:ui-monospace,monospace;font-weight:800;font-size:14px;line-height:1}

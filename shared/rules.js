@@ -17,9 +17,6 @@
   const hideFace = C.hideFace || (k => k);
   const familyName = C.familyName || (k => (CARD_DEFS[k] ? CARD_DEFS[k].name : k));
 
-  /* 回合开始的随机补给：基础 1 点之外，另有这一概率额外 +1 */
-  const BONUS_INCOME_CHANCE = 0.5;
-
   /* 回合上限：到这个回合还没分出胜负就按能量收局（人类局也要有兜底，不能只靠 AI 自己收手） */
   const MAX_TURNS = 240;
   const clone = o => JSON.parse(JSON.stringify(o));
@@ -108,7 +105,7 @@
         discard: { current: [], last: [] },
         markers: Object.fromEntries([1,2,3,4,5,6,7,8,9].map(g => [g, { black: false, purple: false, red: false }])),
         broadcast: null,
-        escapePending: null,   // 挨打时的光速飞船待决（只有被打者能回答）
+        escapePending: null,   // 被打击时的光速飞船待决（只有被打者能回答）
         log: [],
         arrow: null,
         winner: null,
@@ -193,14 +190,10 @@
         gain += def.income;
         detail.push(`${def.short}+${def.income}`);
       });
-      // 回合开始的随机补给：有一半概率再白拿 1 点
-      const bonus = Math.random() < BONUS_INCOME_CHANCE ? 1 : 0;
-      gain += bonus;
-
       const prodBefore = p.energy;
       p.energy += gain;
       noteEnergy(p, prodBefore, 'production');
-      log(`${p.name} 进入回合：基础 1${bonus ? '、随机补给 +1' : ''}${detail.length ? '，' + detail.join('、') : ''} → 能量 ${p.energy}`, 'production');
+      log(`${p.name} 进入回合：基础 1${detail.length ? '，' + detail.join('、') : ''} → 能量 ${p.energy}`, 'production');
       S.step = 'action';
     }
 
@@ -632,7 +625,7 @@
         log(`${target.name}（${GALAXY_NAMES[st.targetGalaxy]}）的 ${n} 张已建卡牌被科技锁死拆除（玩家存活，能量与手牌不受影响）`, 'strike');
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false, disabled: n });
         // 科技锁死是明牌事件：目标写进弃牌条目，当回合在弃牌堆里查得到
-        finishStrike(st, caster, { noReward: true, targetGalaxy: st.targetGalaxy });
+        finishStrike(st, caster, { killed: false, targetGalaxy: st.targetGalaxy });
         return;
       }
 
@@ -670,7 +663,8 @@
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false });
         applyGalaxyEffects(st, def);
       }
-      finishStrike(st, caster);
+      // 只有真把人打死才配拿清场奖励；被挡下只是"打了，没死"
+      finishStrike(st, caster, { killed: !defended });
     }
 
     function applyGalaxyEffects(st, def) {
@@ -721,7 +715,7 @@
         eliminate(target, `被「${sdef.name}」命中 · ${GALAXY_NAMES[st.targetGalaxy]}`);
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false });
         applyGalaxyEffects(st, sdef);
-        finishStrike(st, caster);
+        finishStrike(st, caster, { killed: true });
       }
 
       if (S.phase !== 'playing') return { ok: true };
@@ -770,7 +764,7 @@
       if (!empties.length) {
         log(`${target.name} 启动光速飞船，但已无空星系可去`, 'strike');
         eliminate(target, '无处可逃');
-        finishStrike(st, byId(st.casterId));
+        finishStrike(st, byId(st.casterId), { killed: true });
         return;
       }
       const dest = empties[Math.floor(Math.random() * empties.length)];
@@ -779,18 +773,22 @@
       // 跃迁是随机的，落点只有他自己知道——对外只公布"他跑了"
       log(`${target.name} 启动光速飞船，撤离 ${GALAXY_NAMES[from]}（去向不明；弃全部建设牌与能量）`, 'strike');
       ev('lightship', { actor: target.id, from });
-      finishStrike(st, byId(st.casterId));
+      // 目标成功逃跑：没人被淘汰，不给清场奖励（曾经的 bug 这里也发）
+      finishStrike(st, byId(st.casterId), { killed: false });
     }
 
     function finishStrike(st, caster, opts) {
       const alive = alivePlayers().length;
-      // 科技锁死不杀人，自然也没有清场奖励
-      if (!(opts && opts.noReward) && caster && caster.alive) {
+      // 清场奖励只发给**真淘汰了人**的打击。
+      // ⚠️ 曾经的 bug：奖励挂在"打击结束"上，被挡下、目标乘光速飞船逃跑都会触发，
+      //    3 人局白送 9 能量——玩家没淘汰任何人却能量暴涨，就是这个原因。
+      //    科技锁死（killed:false）、打击落空（提前 return 不走这里）同理不给。
+      if (opts && opts.killed && caster && caster.alive) {
         const reward = alive * 3;
         const rewardBefore = caster.energy;
         caster.energy += reward;
         noteEnergy(caster, rewardBefore, 'reward');
-        log(`${caster.name} 获得清场奖励 +${reward} 能量（剩余 ${alive} 人）`, 'strike');
+        log(`${caster.name} 获得清场奖励 +${reward} 能量（剩余 ${alive} 人）`, 'reward');
       }
       if (caster) caster.strikes = caster.strikes.filter(s => s !== st);
       // opts.targetGalaxy 只在「科技锁死」这类当回合就公开落点的牌上带

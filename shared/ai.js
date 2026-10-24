@@ -189,7 +189,7 @@
       const energy = me.energy;
       const alive = view.players.filter(p => p.alive).length;
 
-      /* A. 挨打时先保命 */
+      /* A. 被打击时先保命 */
       const incoming = [];
       view.players.forEach(p => {
         if (p.id === me.id || !p.alive) return;
@@ -215,7 +215,7 @@
       }
 
       /* C. 建设：先滚产能，再补防御 */
-      // 光速飞船不是建造牌：它留在手里等挨打，不能建
+      // 光速飞船不是建造牌：它留在手里等被打击，不能建
       const builds = ofType('build').filter(x => energy >= x.def.cost && !x.def.escape);
       if (builds.length) {
         const pick = pickBuild(me, builds, view);

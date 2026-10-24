@@ -469,7 +469,7 @@ ok(SM.players[1].hand.length === 4, 'B 出牌阶段开始应补满 4 张，实�
 ok(SM.players[0].hand.length === 1, 'A 结束回合时牌库为空、补不到，实际 ' + SM.players[0].hand.length);
 ok(SM.log.some(l => /回合开始补牌/.test(l.text)), '日志应记「回合开始补牌」');
 
-console.log('=== 16. 光速飞船：只能挨打时启动 ===');
+console.log('=== 16. 光速飞船：只能被打击时启动 ===');
 /** 发一枚打击并把它推到"下一手就命中"，再结束回合让被打者在自己的回合开始时结算 */
 function fireAndResolve(g, S) {
   g.playStrike('p0', 'st1', 2);
@@ -502,7 +502,7 @@ function setupShipCase(targetEnergy) {
   ok(S.players[0].hand.length === 1, '被拒绝后手牌不变');
 }
 
-// 16.2 挨打时挂起等待选择（而不是自动跑）
+// 16.2 被打击时挂起等待选择（而不是自动跑）
 {
   const { g, S } = setupShipCase(12);
   fireAndResolve(g, S);
@@ -658,16 +658,15 @@ console.log('=== 17. 广播：表态完就结算，不必等满 60 秒 ===');
   ok(r.ok, '回合应能继续推进（' + (r.msg || '') + '）');
 }
 
-console.log('=== 18. 初始能量与回合随机补给 ===');
+console.log('=== 18. 初始能量与回合收入（随机补给已移除，收入确定） ===');
 {
   const gP = createGame(['A','B']);
   const SP = gP.state();
-  // 首回合产能已经结算给 p0，所以 p0 是 3+产能，还没轮到的 p1 仍是 3
+  // 首回合产能已经结算给 p0：3 基础 + 1 首回合 = 4，不再有随机 +1
   ok(SP.players[1].energy === 3, '开局每人 3 点能量，未行动的 p1 应为 3，实际 ' + SP.players[1].energy);
-  ok([4, 5].includes(SP.players[0].energy), '首回合 p0 应为 3+1 或 3+2，实际 ' + SP.players[0].energy);
+  ok(SP.players[0].energy === 4, '首回合 p0 应恰好 4 点（3+1），实际 ' + SP.players[0].energy);
 
-  // 连走 30 个回合，看"进入回合的那个人"拿到多少
-  const deltas = [];
+  // 连走 30 个回合：每次进回合 +1，绝不多给
   SP.players.forEach(p => { p.buildZone = []; });
   const snap = {};
   SP.players.forEach(p => { snap[p.id] = p.energy; });
@@ -675,11 +674,13 @@ console.log('=== 18. 初始能量与回合随机补给 ===');
     const cur = SP.players[SP.currentIdx];
     gP.endTurn(cur.id);
     const nx = SP.players[SP.currentIdx];
-    deltas.push(nx.energy - snap[nx.id]);
+    const d = nx.energy - snap[nx.id];
+    ok(d === 1, '进回合应固定 +1（随机补给已删），实际 +' + d);
     snap[nx.id] = nx.energy;
   }
-  ok(deltas.every(d => d === 1 || d === 2), '每回合产能应为 1 或 2，实际 ' + [...new Set(deltas)].join(','));
-  ok(deltas.includes(1) && deltas.includes(2), '30 回合里应两种都出现，实际 ' + JSON.stringify(deltas.slice(0, 10)));
+
+  // 战报不再出现「随机补给」
+  ok(!SP.log.some(l => /随机补给/.test(l.text)), '战报里不应再出现「随机补给」');
 }
 
 console.log('=== 19. 广播牌不提前暴露合作/伪装 ===');
@@ -1199,5 +1200,86 @@ console.log('=== 25. 广播不泄露实际距离（只给射程） ===');
   ok(d26.ownerId === 'p1', '引擎侧仍用 ownerId（别把字段名搞混）');
 }
 
-console.log(`\n结果: ${pass} 通过, ${fail} 失败`);
+console.log('=== 27. reward only on real kill ===');
+{
+  const armStrike = (g, S, uid, target) => {
+    g.playStrike('p0', uid, target);
+    const st = S.players[0].strikes[0];
+    st.progress = st.required - 1;
+    return S.players[0].energy;
+  };
+
+  // 27.1 defended strike: no reward (2 players)
+  {
+    const g = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S = g.state();
+    S.players[0].galaxy = 1; S.players[1].galaxy = 2;
+    S.players[0].energy = 30;
+    S.players[0].hand = [{ uid: 'st-a', key: 'nuke' }];
+    S.players[1].buildZone = [{ uid: 'sh-a', key: 'bunker' }];
+    S.currentIdx = 0; S.step = 'action';
+    const eBefore = armStrike(g, S, 'st-a', 2);
+    g.endTurn('p0'); g.endTurn('p1');
+    ok(S.players[1].alive === true, 'strike should be blocked by bunker');
+    ok(!S.log.some(l => /reward/.test(l.kind) || l.kind === 'reward'), 'blocked strike should NOT log reward');
+    ok(S.players[0].energy === eBefore + 1, 'blocked: only turn income +1, got +' + (S.players[0].energy - eBefore));
+  }
+
+  // 27.2 target escapes via lightship: no reward (3 players)
+  {
+    const g = createGame(['A', 'B', 'C'], { strikeTarget: 'open' });
+    const S = g.state();
+    S.players[0].galaxy = 1; S.players[1].galaxy = 2; S.players[2].galaxy = 8;
+    S.players[0].energy = 30;
+    S.players[0].hand = [{ uid: 'st-b', key: 'nuke' }];
+    S.players[1].energy = 20;
+    S.players[1].hand = [{ uid: 'lp-b', key: 'lightship' }];
+    S.currentIdx = 0; S.step = 'action';
+    const eBefore = armStrike(g, S, 'st-b', 2);
+    g.endTurn('p0'); g.endTurn('p1'); g.endTurn('p2');
+    ok(!!S.escapePending, 'B has ship, escape should be pending');
+    g.chooseEscape('p1', true);
+    ok(S.players[1].alive === true, 'B should escape');
+    ok(!S.log.some(l => l.kind === 'reward'), 'escape should NOT log reward, got ' + JSON.stringify(S.log.filter(l => l.kind === 'reward').map(l => l.text)));
+    ok(S.players[0].energy === eBefore + 1, 'escape: no reward, only resumed turn income +1, got +' + (S.players[0].energy - eBefore));
+    ok(S.discard.last.concat(S.discard.current).some(d => d.uid === 'st-b'), 'strike card still goes to discard');
+  }
+
+  // 27.3 real kill: reward granted (3 players, 2 left -> reward 6, plus turn income 1)
+  {
+    const g = createGame(['A', 'B', 'C'], { strikeTarget: 'open' });
+    const S = g.state();
+    S.players[0].galaxy = 1; S.players[1].galaxy = 2; S.players[2].galaxy = 8;
+    S.players[0].energy = 30;
+    S.players[0].hand = [{ uid: 'st-c', key: 'nuke' }];
+    S.currentIdx = 0; S.step = 'action';
+    const eBefore = armStrike(g, S, 'st-c', 2);
+    g.endTurn('p0'); g.endTurn('p1'); g.endTurn('p2');
+    ok(S.players[1].alive === false, 'B should be eliminated');
+    const rlog = S.log.find(l => l.kind === 'reward');
+    ok(!!rlog, 'real kill should log reward');
+    const m = rlog ? rlog.text.match(/\+(\d+)/) : null;
+    ok(m && Number(m[1]) === 6, '2 alive -> reward should be 6, got ' + (m && m[1]));
+    ok(S.players[0].energy === eBefore + 6 + 1, 'caster should get +6 reward +1 income, got +' + (S.players[0].energy - eBefore));
+  }
+
+  // 27.4 tech lock: never rewards
+  {
+    const g = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S = g.state();
+    S.players[0].galaxy = 1; S.players[1].galaxy = 2;
+    S.players[0].energy = 30;
+    S.players[0].hand = [{ uid: 'st-d', key: 'lock' }];
+    S.players[1].buildZone = [{ uid: 'bz-d', key: 'solar' }];
+    S.currentIdx = 0; S.step = 'action';
+    // lock is an immediate card: it resolves the moment it is played
+    const r27d = g.playStrike('p0', 'st-d', 2);
+    ok(r27d && r27d.ok === true, 'tech lock plays immediately');
+    ok(S.players[1].alive === true, 'tech lock does not kill');
+    ok(S.players[1].buildZone.length === 0, 'builds should be discarded');
+    ok(!S.log.some(l => l.kind === 'reward'), 'tech lock should NOT log reward');
+  }
+}
+
+console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail?1:0);

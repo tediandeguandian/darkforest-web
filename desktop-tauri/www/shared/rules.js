@@ -108,7 +108,7 @@
         discard: { current: [], last: [] },
         markers: Object.fromEntries([1,2,3,4,5,6,7,8,9].map(g => [g, { black: false, purple: false, red: false }])),
         broadcast: null,
-        escapePending: null,   // 挨打时的光速飞船待决（只有被打者能回答）
+        escapePending: null,   // 被打击时的光速飞船待决（只有被打者能回答）
         log: [],
         arrow: null,
         winner: null,

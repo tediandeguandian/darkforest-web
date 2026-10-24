@@ -2,7 +2,7 @@
 
 > 给下一个接手的 AI 或人类开发者。读完这一份，你应该能在 10 分钟内跑起来、30 分钟内改第一个需求。
 >
-> 项目版本：**v1.0.17**（2026-10-24）
+> 项目版本：**v1.0.18**（2026-10-24）
 > 线上：<https://darkforest.dpdns.org>（Cloudflare Worker `dark-forest` + Durable Object）
 > APK：`黑暗森林-v1.0.14.apk`（644 KB，versionCode 20，含 5 档图标 + 自适应图标 + 两张背景）
 
@@ -101,7 +101,7 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 测试 | — | 267（规则）+ 19（UI 冒烟）+ 34（DO） |
 | 观战 / 回放 / 战绩 | — | ⬜ 未开始 |
 | 房主移交 / 踢人 | — | ⬜ 未开始 |
-| 真机验证 APK | — | ⚠️ v1.0.17 已出包（签名可覆盖升级），仍未在真安卓机跑过 |
+| 真机验证 APK | — | ⚠️ v1.0.18 已出包（签名可覆盖升级），仍未在真安卓机跑过 |
 
 ---
 
@@ -154,6 +154,8 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 房间不持久 | 内存房间 3 小时无人在线即回收；DO 房间靠存储 | 长局别中途全退 |
 | 1.0.4 及更早只能跳浏览器 | 那些版本的更新是 `openUrl` 交给系统浏览器，多点两下、还得手动点安装包 | 从 1.0.5 起是应用内下载 + 直接唤起安装器；旧版需手动装一次 |
 | 1.0.1/1.0.2 无法自更新 | 那两版的检测代码用相对路径 + 服务端没给静态 CORS，属于"装上去就再也收不到提示" | 让用户手动装一次 v1.0.3；从 1.0.3 起提示链路才通 |
+| 随机补给 | **已移除**（1.0.18）：每回合产能 = 基础 1 + 建设产能，确定值 | 用户要求去除；`BONUS_INCOME_CHANCE` 常量与战报字段已删，测试第 18 节改为断言固定 +1 |
+| 清场奖励只看淘汰 | `finishStrike(st, caster, { killed })` —— **只有 killed:true 才发**（被挡下/目标逃跑/科技锁死/落空都不发） | 曾经挂在"打击结束"上，被挡或逃跑也发，3 人局白送 9 能量。日志 kind 用 `reward`（UI 分类表里本来就有这一项） |
 | 换人提示时长 | `renderGame` 的 `UI.gate` 3 秒（`until` 与 `gateTimer` 两处都要改，只改一个会出现「按钮亮了但遮罩还在」或反过来） | 3 秒是「看清局势」和「别墨迹」的折中；曾经是 5 秒 |\n| 光速飞船可弃置 | `renderHand` 的点牌回调对 `def.escape` 只挡「出」不挡「选」——选中后「出牌」按钮恒灰（`canPlay` 里 `!selDef.escape`），「弃置」照常可用 | 留着保命是默认选择，不是强制；想换牌不该被拦住。曾经的 bug：回调直接 toast + return，连选都选不了 |\n| 联机人机思考时间 | 最少 3 秒、区间 3–10 秒。**wrangler.toml 的 `[vars]` 会覆盖代码默认值**，改线上必须两处一起改（`worker/src/index.js` + `wrangler.toml`）；本地 Node 服在 `server/server.js`；单机在 `web/js/local.js`（2.2–4.2 秒，故意比线上短） |\n| 「谁出的牌」提示 | 宽屏：从座位卡画一条贝塞尔曲线到弃牌块（`.arrow-layer`，fixed 全屏 SVG）；**窄屏（≤1100px）不画**，改在牌块上显示 `.dc-who` 出牌人名 | 窄屏布局是上下堆叠的，跨屏线会盖住星图与提示文字。归属信息由 `view.js` 的 `discardEntry.actor/actorName` 提供（本来就是公开信息） |
 | CI 自动挂 Release | `softprops/action-gh-release@v2` 需要 `permissions: contents: write`，否则静默失败（被 continue-on-error 吞掉） | tag 由 Release 创建触发 CI，产物会自动挂到对应 Release；v1.0.16 因缺权限没挂上，手动补传 |
 | 广播不泄露坐标 | 战报/事件里广播**只给射程**（`radius`），不给实际距离（`distance` 这个字段在广播事件里根本不存在） | 目标星系是公开的，实际距离一公开，发布者坐标就公开了。AI 那边同样只准用 `radius`——用它反推位置才和人眼看到的一样多 |
@@ -200,14 +202,12 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 
 ```
 HANDOFF.md                  本文件
-对话-用户需求全记录.md        57 条需求原文，9 KB（必读）
-对话-完整.md                 400 段完整往来，185 KB（需要复盘决策时再读）
 三体黑暗森林桌游-网页化设计与AI方案.md   完整设计文档（1240 行）
 README.md                   项目说明与运行方式
 shared/ server/ worker/ web/ apk/ game/ tools/
-黑暗森林-v1.0.17.apk        现成安装包（v1.5 也留着，用于回退对照）
-desktop/dist/黑暗森林-1.0.17-win64-setup.exe  Windows 安装程序（105 MB，NSIS）
-desktop/dist/黑暗森林-win64-v1.0.17.zip       Windows 免安装版（142 MB）
+黑暗森林-v1.0.18.apk        现成安装包（v1.5 也留着，用于回退对照）
+desktop/dist/黑暗森林-1.0.18-win64-setup.exe  Windows 安装程序（105 MB，NSIS）
+desktop/dist/黑暗森林-win64-v1.0.18.zip       Windows 免安装版（142 MB）
 
 GitHub：https://github.com/tediandeguandian/darkforest-web
   · 代码已推 main 分支（144 个文件，不含 node_modules 与构建产物）

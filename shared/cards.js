@@ -110,7 +110,7 @@
         f.main = '防御 ≤' + d.defense;
         f.sub = '只保人，不保星系';
       } else if (d.escape) {
-        f.main = '挨打后跃迁';
+        f.main = '被打击后跃迁';
         f.sub = '弃全部能量与建造';
       } else if (d.noResponse) {
         f.main = '可不回应';

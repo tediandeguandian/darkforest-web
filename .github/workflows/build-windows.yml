@@ -48,6 +48,15 @@ jobs:
         working-directory: desktop-tauri
         run: cargo tauri build --bundles nsis
 
+      # ⚠️ 中文名经 URL 传给 GitHub 会被截成 "_1.0.17_x64-setup.exe" 这种残缺名——
+      #    上传前统一改成 ASCII。GITHUB_REF_NAME 就是 tag（v1.0.17），去掉开头的 v。
+      - name: 安装包改英文名
+        shell: bash
+        working-directory: desktop-tauri/src-tauri/target/release/bundle/nsis
+        run: |
+          for f in *.exe; do mv "$f" "dark-forest-${GITHUB_REF_NAME#v}-tauri-setup.exe"; done
+          ls -lh
+
       - uses: actions/upload-artifact@v4
         with:
           name: dark-forest-tauri-setup
@@ -109,6 +118,13 @@ jobs:
         shell: bash
         working-directory: desktop
         run: npx electron-builder --win nsis --x64
+
+      - name: 安装包改英文名（同上，中文名会被 GitHub 截断）
+        shell: bash
+        working-directory: desktop/release
+        run: |
+          for f in *.exe; do mv "$f" "dark-forest-${GITHUB_REF_NAME#v}-win64-setup.exe"; done
+          ls -lh
 
       - uses: actions/upload-artifact@v4
         with:
