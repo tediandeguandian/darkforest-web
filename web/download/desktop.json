@@ -3,14 +3,14 @@
   "items": [
     {
       "label": "下载 Windows 版（轻量）",
-      "sub": "v1.0.19 · 1.5 MB · 需 WebView2（缺失时自动装）",
-      "url": "/download/dark-forest-1.0.19-tauri-setup.exe",
-      "file": "dark-forest-1.0.19-tauri-setup.exe"
+      "sub": "v1.0.20 · 1.5 MB · 需 WebView2（缺失时自动装）",
+      "url": "/download/dark-forest-1.0.20-tauri-setup.exe",
+      "file": "dark-forest-1.0.20-tauri-setup.exe"
     },
     {
       "label": "下载 Windows 版（完整）",
-      "sub": "v1.0.19 · 105 MB · 零依赖，自带浏览器内核",
-      "url": "https://github.com/tediandeguandian/darkforest-web/releases/download/v1.0.19/dark-forest-1.0.19-win64-setup.exe"
+      "sub": "v1.0.20 · 105 MB · 零依赖，自带浏览器内核",
+      "url": "https://github.com/tediandeguandian/darkforest-web/releases/download/v1.0.20/dark-forest-1.0.20-win64-setup.exe"
     }
   ]
 }
