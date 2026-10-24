@@ -9,15 +9,18 @@
 # 所以不在这里动——但每次发版记得把它一起改（README 的发版清单里有写）。
 #
 #   sh tools/sync-version.sh
+#
+# ⚠️ 这里读版本号用 fs.readFileSync，不用 require()：
+#    Windows 的 Git bash 下 pwd 返回 /d/a/... 这种 POSIX 路径，require() 不认。
 # ============================================================
 set -e
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-VER=$(node -p "require('$HERE/desktop/package.json').version")
 
-TAURI_CONF="$HERE/desktop-tauri/src-tauri/tauri.conf.json"
-node - "$TAURI_CONF" "$VER" <<'EOF'
+node - "$HERE" <<'EOF'
 const fs = require('fs');
-const [, , file, ver] = process.argv;
+const [here] = process.argv.slice(2);
+const ver = JSON.parse(fs.readFileSync(here + '/desktop/package.json', 'utf8')).version;
+const file = here + '/desktop-tauri/src-tauri/tauri.conf.json';
 const j = JSON.parse(fs.readFileSync(file, 'utf8'));
 if (j.version !== ver) {
   j.version = ver;
