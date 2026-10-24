@@ -14,10 +14,6 @@ files:
 # ⚠️ 不用 asar：本机文件沙箱会在 asar 打包时失败（详见 README）
 asar: false
 
-# ⚠️ electronDist：本机沙箱会拒绝 electron-builder 下载/解压 Electron 时的
-#    锁文件操作（win-unpacked.tmp.lock），所以指向一份手动解压好的 win32 运行时，
-#    让它跳过「下载 + 解包」直接拷贝。CI 上可以删掉这行让它自动下载。
-electronDist: build/electron-dist
 
 # 最高压缩（NSIS 用 LZMA 固实压缩，比 zip 小很多）
 compression: maximum
@@ -26,7 +22,7 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  icon: build/icon.ico
+  icon: assets/icon.ico
   artifactName: 黑暗森林-${version}-win64-setup.${ext}
 
 nsis:

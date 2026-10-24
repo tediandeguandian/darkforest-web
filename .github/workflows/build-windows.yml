@@ -64,16 +64,25 @@ jobs:
         shell: bash
         run: sh tools/prep-frontend.sh desktop/www
 
-      - name: 生成图标 ico
+      - name: 准备图标
         shell: bash
         run: |
           mkdir -p desktop/build
-          python -c "from PIL import Image; Image.open('apk/icon/icon-512.png').convert('RGBA').save('desktop/build/icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])" || echo "跳过图标（装 Pillow 的机器才有）"
+          # 仓库里已经带了 desktop/assets/icon.ico（提交进版本库，不用现场生成）；
+          # 万一没有才退回去用 Pillow 现做一个——runner 上默认没装 Pillow。
+          if [ -f desktop/assets/icon.ico ]; then
+            cp desktop/assets/icon.ico desktop/build/icon.ico
+            echo "用仓库里的 assets/icon.ico"
+          else
+            python -m pip install --quiet pillow
+            python -c "from PIL import Image; Image.open('apk/icon/icon-512.png').convert('RGBA').save('desktop/build/icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])"
+          fi
 
       - name: 安装依赖
         shell: bash
         working-directory: desktop
         run: npm ci
+
 
       - name: 构建 NSIS 安装包
         shell: bash
