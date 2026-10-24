@@ -9,6 +9,9 @@ desktop/release/
 desktop/www/
 worker/public/
 
+# 本地预览快照（截图脚本产物）
+web/_preview.html
+
 # 系统与编辑器
 .DS_Store
 *.swp
