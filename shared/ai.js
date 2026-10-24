@@ -65,10 +65,16 @@
       let cand = new Set(live);
 
       for (const e of memory) {
-        // 全局事实：打击落空 / 命中，都说明「那一刻该星系有人/没人」。
-        // 命中意味着有人（已淘汰），落空意味着没人——两种都能把该星系从所有人的候选里划掉。
-        if (e.type === 'strike_miss' || e.type === 'strike_hit') {
-          cand.delete(e.target);
+        // 打击结果不再是公开情报（战报只写"什么打击抵达什么星系"），AI 必须和人看到的一样多：
+        //   · 打空：只有自己打空才知道那儿当时没人；别人打空不公开
+        //   · 命中（真打死了人）：死讯公开，可以划掉
+        //   · 被挡下：既不公开死了人也没公开谁挡的，不能划掉
+        if (e.type === 'strike_miss') {
+          if (e.actor === meId) cand.delete(e.target);
+          continue;
+        }
+        if (e.type === 'strike_hit') {
+          if (!e.defended) cand.delete(e.target);
           continue;
         }
         if (e.actor !== o.id) continue;
@@ -289,9 +295,10 @@
             const hasShip = o.buildZone.some(b => CARD_DEFS[b.key].escape);
             // 命中：清场奖励 3×存活人数；被挡：只熄恒星，值一点；有船：他跑了但清空基建
             // 被挡下时的价值：湮灭会清空对方所有建设牌（开罐器），远高于普通被挡
+            // 清场奖励 = 淘汰后剩余人数 × 3（自己也会少一个，所以要减 1）
             const gain = blocked
               ? (card.def.destroyBuilds ? 2.6 : 0.6)
-              : (hasShip ? 2.0 : 3 * alive);
+              : (hasShip ? 2.0 : 3 * Math.max(0, alive - 1));
             exp += p * gain;
           }
           exp -= card.def.cost * 0.55;                          // 造价与暴露风险折算

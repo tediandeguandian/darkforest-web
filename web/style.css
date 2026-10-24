@@ -147,6 +147,10 @@ button{font-family:inherit}
 .marker.black{fill:#1a1a1a;stroke:#555}
 .marker.purple{fill:var(--purple)}
 .marker.red{fill:var(--red)}
+/* 降维打击后的星系：名字与编号一起置灰并划掉，表示这里已被彻底清除 */
+.node.dimmed .node-num{fill:#5d5675}
+.node.dimmed .node-name{fill:#574f70;text-decoration:line-through}
+.node.dimmed .node-bg{fill:#171226;stroke:#332a4d}
 
 /* ---------- 手牌 ---------- */
 .hand-wrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;flex:0 0 auto;display:flex;flex-direction:column;overflow:hidden}
@@ -474,6 +478,24 @@ body{background:transparent}   /* 底色交给 html + body::before，别在这�
 .callout.blind .co-main{color:#e0a95c}
 
 /* 弃牌托盘 */
+/* 宽屏：星图在左、弃牌堆在右并排；窄屏（≤1100px）回到上下堆叠 */
+.arena-main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 250px;gap:8px}
+.arena-main .map-wrap{min-width:0}
+.arena-main .tray{
+  max-height:none;align-self:stretch;min-width:0
+}
+.arena-main .tray-row{flex-direction:column;gap:3px}
+.arena-main .tray-label{min-width:0;padding-top:0}
+
+/* 窄屏：回到上下堆叠。这条必须写在上面基础规则之后——
+   同特异度时后写的赢，写在前面会被基础规则反覆盖，手机上就挤成两栏了。 */
+@media(max-width:1100px){
+  .arena-main{grid-template-columns:1fr;grid-template-rows:auto auto;gap:6px}
+  .arena-main .tray-row{flex-direction:row;gap:8px}
+  .arena-main .tray-label{min-width:76px;padding-top:5px}
+  .arena-main .tray{max-height:172px}
+}
+
 .tray{
   flex:0 0 auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;
   padding:6px 8px;display:flex;flex-direction:column;gap:6px;max-height:172px;overflow-y:auto
@@ -991,6 +1013,9 @@ body{background:transparent}   /* 底色交给 html + body::before，别在这�
 }
 .dlg-verline:first-of-type{margin-top:6px}
 .dlg-list{margin:0;padding-left:15px;max-height:34vh;overflow:auto}
+.dl-list{display:flex;flex-direction:column;gap:8px}
+.dl-list .apk-get{margin-top:0;width:100%}
+.dl-list .apk-txt span{white-space:normal}
 .dlg-list li{font-size:11.5px;color:var(--txt);line-height:1.75;margin:2px 0}
 .dlg-list li::marker{color:var(--gold)}
 .dlg-note b{color:var(--txt)}

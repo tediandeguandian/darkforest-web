@@ -93,14 +93,6 @@ function openPrefModal() {
       <div class="set-head"><b>设置</b><button class="mini-x" id="prefClose" title="关闭">×</button></div>
 
       <div class="set-group">
-        <div class="set-label">名字</div>
-        <div class="pref-name">
-          <input id="prefName" maxlength="12" placeholder="输入名字" value="${esc(Net.name() || '')}" />
-          <button class="btn primary" id="prefNameSave">保存</button>
-        </div>
-      </div>
-
-      <div class="set-group">
         <div class="set-label">界面</div>
         <div class="pref-row">
           <span class="pr-txt">毛玻璃<span>面板半透明、背景虚化；关掉更清楚</span></span>
@@ -125,18 +117,6 @@ function openPrefModal() {
   document.addEventListener('keydown', function esc3(e) {
     if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc3); }
   });
-
-  // 名字：保存后同步入口页那个输入框，不用退出去重填
-  const saveName = () => {
-    const v = (box.querySelector('#prefName').value || '').trim();
-    if (!v) return toast('名字不能为空');
-    Net.setName(v);
-    const entry = document.getElementById('myname');
-    if (entry) entry.value = v;
-    toast('名字已更新');
-  };
-  box.querySelector('#prefNameSave').addEventListener('click', saveName);
-  box.querySelector('#prefName').addEventListener('keydown', e => { if (e.key === 'Enter') saveName(); });
 
   const sw = box.querySelector('#prefFrost');
   const range = box.querySelector('#prefLevel');
@@ -213,7 +193,6 @@ function renderEntry() {
           </div>` : ''}
       `}
       <div id="apkSlot"></div>
-      <div id="desktopSlot"></div>
     </div>`;
 
   $('#createBtn').addEventListener('click', () => {
@@ -254,8 +233,7 @@ function renderEntry() {
   const pb = $('#prefBtn');
   if (pb) pb.addEventListener('click', openPrefModal);
 
-  mountApkEntry();
-  mountDesktopEntry();
+  mountDownloadEntry();
   checkAppUpdate();
 }
 
@@ -273,74 +251,94 @@ const WIN_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" st
     <path d="M14 14h3v-2"/><path d="M14 12h2.5"/>
   </svg>`;
 
-function mountApkEntry() {
+/* 下载入口：所有安装包聚合成**一个**「下载客户端」按钮，
+   点开在应用内弹层里挑平台。
+   之前是三行下载条（安卓 / Windows 轻量 / Windows 完整），入口页被撑到显示不全。 */
+function mountDownloadEntry() {
   const slot = $('#apkSlot');
   if (!slot) return;
-  // APK 里（file:// 或注入了 DF_APP）自己就是安装包，不需要下载入口
+  // APK / 桌面版里（file:// 或注入了 DF_APP）自己就是程序，不需要下载入口
   if (typeof window !== 'undefined' && (window.DF_APP || location.protocol === 'file:')) return;
 
-  const paint = info => {
-    if (!info || !info.file) return;
-    const kb = info.bytes ? Math.round(info.bytes / 1024) : 0;
-    const meta = [
-      info.version ? 'v' + info.version : '',
-      kb ? kb + ' KB' : '',
-      '离线 · 同 Wi-Fi · 联机',
-    ].filter(Boolean).join(' · ');
-    slot.innerHTML = `<a class="apk-get" href="/download/${esc(info.file)}"
-        download="黑暗森林${info.version ? '-v' + esc(info.version) : ''}.apk">
-      <span class="apk-ico">${APK_ICON}</span>
-      <span class="apk-txt"><b>下载安卓版</b><span>${esc(meta)}</span></span>
-      <span class="apk-arrow">↓</span>
-    </a>`;
+  const collect = () => {
+    const out = [];
+    const apk = UI.apk;
+    if (apk && apk.file) {
+      const kb = apk.bytes ? Math.round(apk.bytes / 1024) : 0;
+      out.push({
+        icon: APK_ICON,
+        label: '下载安卓版',
+        sub: [apk.version ? 'v' + apk.version : '', kb ? kb + ' KB' : '', '离线 · 同 Wi-Fi · 联机']
+          .filter(Boolean).join(' · '),
+        url: '/download/' + apk.file,
+        file: '黑暗森林' + (apk.version ? '-v' + apk.version : '') + '.apk',
+      });
+    }
+    const desk = UI.desktop;
+    if (desk && Array.isArray(desk.items)) {
+      desk.items.forEach(it => out.push({
+        icon: WIN_ICON,
+        label: it.label || '下载 Windows 版',
+        sub: it.sub || '',
+        url: it.url || '#',
+        file: it.file || '',
+      }));
+    }
+    return out;
   };
 
-  if (UI.apk !== null) return paint(UI.apk);
-  fetch('/download/apk.json', { cache: 'no-store' })
-    .then(r => (r.ok ? r.json() : null))
-    .catch(() => null)
-    .then(info => {
-      UI.apk = info || false;           // false = 已经问过，确认没有安装包
-      if ($('#apkSlot')) paint(info);   // 此时可能已经离开入口页，别再往空气里画
-    });
+  const paint = () => {
+    const list = collect();
+    if (!list.length) return;
+    slot.innerHTML = `<button class="apk-get" id="dlBtn" type="button">
+      <span class="apk-ico">${APK_ICON}</span>
+      <span class="apk-txt"><b>下载客户端</b><span>${list.length} 个版本 · 安卓 / Windows</span></span>
+      <span class="apk-arrow">↓</span>
+    </button>`;
+    const btn = $('#dlBtn');
+    if (btn) btn.addEventListener('click', () => openDownloadDialog(list));
+  };
+
+  const load = url => fetch(url, { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null)).catch(() => null);
+  const p1 = UI.apk !== null ? Promise.resolve(UI.apk)
+    : load('/download/apk.json').then(x => { UI.apk = x || false; return UI.apk; });
+  const p2 = UI.desktop !== null ? Promise.resolve(UI.desktop)
+    : load('/download/desktop.json').then(x => { UI.desktop = x || false; return UI.desktop; });
+  Promise.all([p1, p2]).then(() => { if ($('#apkSlot')) paint(); });
 }
 
-/* Windows 版下载入口：数据来自 web/download/desktop.json（发版时由
-   tools/publish-github.sh 自动重写，不会过期）。链接指向 GitHub Release，
-   所以走 target=_blank，不用 download 属性。 */
-function mountDesktopEntry() {
-  const slot = $('#desktopSlot');
-  if (!slot) return;
-  // 桌面版自己就是程序，不需要给自己挂下载入口
-  if (typeof window !== 'undefined' && (window.DF_APP || location.protocol === 'file:')) return;
-
-  const paint = data => {
-    const items = (data && Array.isArray(data.items)) ? data.items : [];
-    if (!items.length) return;
-    slot.innerHTML = items.map(it => {
-      // 本地文件（同源 /download/…）直接下，跟安卓版一个体验；
-      // 外链（GitHub Release）才新窗口打开——箭头也跟着换，别骗用户
-      const local = !/^https?:\/\//i.test(it.url || '');
-      const href = esc(it.url || '#');
-      const dl = local && it.file ? ` download="${esc(it.file)}"` : '';
-      const ext = local ? '' : ' target="_blank" rel="noopener"';
-      return `
-      <a class="apk-get" href="${href}"${dl}${ext}>
-        <span class="apk-ico">${WIN_ICON}</span>
-        <span class="apk-txt"><b>${esc(it.label || '下载 Windows 版')}</b><span>${esc(it.sub || '')}</span></span>
-        <span class="apk-arrow">${local ? '↓' : '↗'}</span>
-      </a>`;
-    }).join('');
-  };
-
-  if (UI.desktop !== null) return paint(UI.desktop);
-  fetch('/download/desktop.json', { cache: 'no-store' })
-    .then(r => (r.ok ? r.json() : null))
-    .catch(() => null)
-    .then(data => {
-      UI.desktop = data || false;
-      if ($('#desktopSlot')) paint(data);
-    });
+/* 下载客户端弹层：列出各平台安装包 */
+function openDownloadDialog(list) {
+  document.getElementById('dlDialog')?.remove();
+  const box = document.createElement('div');
+  box.id = 'dlDialog';
+  box.className = 'dlg-mask';
+  box.innerHTML = `
+    <div class="dlg">
+      <div class="dlg-head"><b>下载客户端</b><button class="mini-x" data-close title="关闭">×</button></div>
+      <div class="dlg-body"><div class="dl-list">
+        ${list.map(it => {
+          // 本地文件（同源 /download/…）直接下；外链（GitHub Release）才新窗口打开
+          const local = !/^https?:\/\//i.test(it.url || '');
+          const dl = local && it.file ? ` download="${esc(it.file)}"` : '';
+          const ext = local ? '' : ' target="_blank" rel="noopener"';
+          return `<a class="apk-get dl-item" href="${esc(it.url || '#')}"${dl}${ext}>
+            <span class="apk-ico">${it.icon}</span>
+            <span class="apk-txt"><b>${esc(it.label)}</b><span>${esc(it.sub)}</span></span>
+            <span class="apk-arrow">${local ? '↓' : '↗'}</span>
+          </a>`;
+        }).join('')}
+      </div></div>
+      <div class="dlg-foot"><button class="btn ghost" data-close>关闭</button></div>
+    </div>`;
+  document.body.appendChild(box);
+  const close = () => box.remove();
+  box.addEventListener('click', e => { if (e.target === box) close(); });
+  box.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+  document.addEventListener('keydown', function esc4(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc4); }
+  });
 }
 
 /* 服务器根地址：APK 里是 file://，相对路径会解析成 file:///download/… 根本发不出去，
@@ -451,7 +449,7 @@ function openUpdateDialog(info) {
       ${multi ? `<p class="dlg-note">落后 ${groups.length} 个版本，直接更新到最新版，无需逐版本安装。</p>` : ''}
       ${groups.length ? `<div class="dlg-sub">本次更新${multi ? ` · ${groups.length} 个版本` : ''}</div>${notes}` : ''}
       ${rest > 0 ? `<p class="dlg-note">另有 ${rest} 个较早版本的改动未列出。</p>` : ''}
-      <p class="dlg-note">更新只替换程序本身，对局记录和本机设置都会保留。</p>`,
+      <p class="dlg-note">更新不会影响本机设置。</p>`,
     okText: '立即更新',
     cancelText: '稍后再说',
     onOk: () => downloadUpdate(info),
@@ -734,9 +732,11 @@ function renderGame() {
               : (v.thinking ? `<i class="dots"><b></b><b></b><b></b></i>${esc(cur ? cur.name : '')} 思考中`
                             : esc(cur ? cur.name : '') + ' 行动中'))}</span>
         </div>
-        <div class="map-wrap" id="map"></div>
+        <div class="arena-main">
+          <div class="map-wrap" id="map"></div>
+          <div class="tray" id="discard"></div>
+        </div>
         <div class="callout" id="callout"></div>
-        <div class="tray" id="discard"></div>
         <div class="action-bar" id="actions"></div>
       </section>
 
@@ -1038,7 +1038,8 @@ function renderMap(v) {
     const canPick = reachable ? reachable.has(g) : true;
     const incoming = flightBy[g] || [];
     const cls = ['node', isTarget ? 'target' : '', isMine ? 'occupied' : '',
-                 canPick ? '' : 'far', incoming.length ? 'under-strike' : ''].join(' ');
+                 canPick ? '' : 'far', incoming.length ? 'under-strike' : '',
+                 m.red ? 'dimmed' : ''].join(' ');   // 降维打击后的星系：文字置灰
     svg += `<g class="${cls}" data-g="${g}">`;
     svg += `<circle cx="${x}" cy="${y}" r="33" class="node-bg"/>`;
     svg += `<text x="${x}" y="${y - 5}" class="node-num">${g}</text>`;
@@ -1116,12 +1117,14 @@ function renderCallout(v) {
     .sort((a, b) => (b.progress || 0) - (a.progress || 0))[0];
 
   if (toMe) {
-    // 被打的人也不知道还有几手到——这正是"黑暗森林"该有的压迫感
-    const isKnown = toMe.mine || toMe.progress != null;
+    // 被打的人也不知道还有几手到——这正是"黑暗森林"该有的压迫感。
+    // 注意 required（要飞几手）只有发起者知道，别人的打击这里拿不到，
+    // 早先误用 progress 判断导致显示成"还需 0 手到达"。
+    const isKnown = toMe.required != null;
     const left = isKnown ? Math.max(0, toMe.required - toMe.progress) : null;
     box.className = 'callout danger show';
     box.innerHTML = `<div class="co-main">⚠ ${CARD_DEFS[toMe.key].short} 正在飞向你的星系</div>
-      <div class="co-sub">已飞 ${toMe.progress} 手 · ${isKnown ? `还需 ${left} 手到达` : '到达时间未知'} · ${esc(galLabel(me.galaxy))}</div>`;
+      <div class="co-sub">已飞 ${toMe.progress} 手 · ${isKnown ? `还需 ${left} 手到达` : '还需 ? 手到达'} · ${esc(galLabel(me.galaxy))}</div>`;
     return;
   }
   if (v.escape) {

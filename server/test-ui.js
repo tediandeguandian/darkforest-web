@@ -168,11 +168,19 @@ sm && sm.remove();
   w.__render();
   await new Promise(r => setTimeout(r, 0));
   let slot = w.document.querySelector('#apkSlot');
-  ok(!!slot && slot.innerHTML.indexOf('下载安卓版') >= 0, '有 apk.json 时应画出入口');
-  ok(!!slot && slot.innerHTML.indexOf('/download/dark-forest.apk') >= 0, '链接应指向 /download/ 短链');
-  ok(!!slot && slot.innerHTML.indexOf('v1.0.1') >= 0, '应显示版本号');
-  ok(!!slot && slot.innerHTML.indexOf('330 KB') >= 0, '应显示体积（338130 → 330 KB）');
-  ok(!!slot && /download="黑暗森林-v1\.0\.1\.apk"/.test(slot.innerHTML), '下载文件名应友好');
+  ok(!!slot && slot.innerHTML.indexOf('下载客户端') >= 0, '有 apk.json 时应画出下载入口');
+  ok(!!slot && slot.querySelectorAll('.apk-get').length === 1, '入口页只画一个下载按钮');
+  // 具体的平台条目在弹层里
+  const dlBtn0 = w.document.querySelector('#dlBtn');
+  dlBtn0 && dlBtn0.click();
+  const dlg0 = w.document.querySelector('#dlDialog');
+  const l0 = dlg0 ? [...dlg0.querySelectorAll('a.apk-get')] : [];
+  ok(l0.length === 1, '弹层里应有安卓版一条，实际 ' + l0.length);
+  ok(l0[0] && l0[0].href.indexOf('/download/dark-forest.apk') >= 0, '链接应指向 /download/ 短链');
+  ok(l0[0] && l0[0].textContent.indexOf('v1.0.1') >= 0, '应显示版本号');
+  ok(l0[0] && l0[0].textContent.indexOf('330 KB') >= 0, '应显示体积（338130 → 330 KB）');
+  ok(l0[0] && /download="黑暗森林-v1\.0\.1\.apk"/.test(l0[0].outerHTML), '下载文件名应友好');
+  dlg0 && dlg0.remove();
 
   // 后端没有安装包（局域网 / 纯网页部署）
   w.eval(`window.fetch = () => Promise.resolve({ ok: false, json: () => Promise.resolve(null) });`);
@@ -404,7 +412,7 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   const pbox = w.document.querySelector('#prefModal');
   ok(!!pm, '点设置应弹出面板');
   const pmHtml = pbox ? pbox.innerHTML : '';
-  ok(pmHtml.indexOf('名字') >= 0, '面板里应能改名字');
+  ok(pmHtml.indexOf('名字') < 0, '设置里不再有名字编辑（名字只在入口页输入）');
   ok(pmHtml.indexOf('毛玻璃') >= 0, '面板里应有毛玻璃开关');
   ok(!!(pbox && pbox.querySelector('#prefLevel')), '应有浓度滑杆');
 
@@ -431,10 +439,10 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   ok(saved.frost === false, '开关状态应落盘');
   ok(!!(pbox.querySelector('#prefLevel').disabled), '关掉后浓度滑杆应变灰');
 
-  // 改名
-  pbox.querySelector('#prefName').value = '新名字';
-  pbox.querySelector('#prefNameSave').click();
-  ok(w.__savedName === '新名字', '保存名字应调用 Net.setName，实际 ' + w.__savedName);
+  // 名字编辑已从设置里去掉（名字只在入口页输入）
+  ok(!pbox.querySelector('#prefName'), '设置里不应再有名字输入框');
+  ok(!pbox.querySelector('#prefNameSave'), '设置里不应再有名字保存按钮');
+  ok(pbox.innerHTML.indexOf('名字') < 0, '设置面板不应出现「名字」字样');
 
   pbox.remove();
   w.applyUiPref({ frost: true, level: 0.55 });
@@ -484,44 +492,48 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   pm5.remove();
   w.applyUiPref({ frost: true, level: 0.45 });
 
-  console.log('=== UI 16. 入口页的 Windows 版下载链接 ===');
+  console.log('=== UI 16. 入口页下载入口：聚合成一个「下载客户端」按钮 ===');
   // 第 9 节设过 window.DF_APP（模拟安卓壳），入口函数会因此整块跳过——先删掉
-  w.Net.view = null; w.Net.room = null;
   w.eval(`delete window.DF_APP; window.__UI.desktop = null; window.__UI.apk = null;
     window.fetch = (u) => {
       if (String(u).indexOf('desktop.json') >= 0) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ title: 'Windows 版', items: [
-          { label: '下载 Windows 版（轻量）', sub: 'v1.0.15 · 1.5 MB', url: '/download/dark-forest-1.0.15-tauri-setup.exe', file: 'dark-forest-1.0.15-tauri-setup.exe' },
-          { label: '下载 Windows 版（完整）', sub: 'v1.0.15 · 105 MB', url: 'https://github.com/x/darkforest-web/releases/download/v1.0.15/dark-forest-1.0.15-win64-setup.exe' },
+          { label: '下载 Windows 版（轻量）', sub: 'v1.0.18 · 1.5 MB', url: '/download/dark-forest-1.0.18-tauri-setup.exe', file: 'dark-forest-1.0.18-tauri-setup.exe' },
+          { label: '下载 Windows 版（完整）', sub: 'v1.0.18 · 105 MB', url: 'https://github.com/x/darkforest-web/releases/download/v1.0.18/dark-forest-1.0.18-win64-setup.exe' },
         ] }) });
       }
-      return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '1.0.15', file: 'dark-forest.apk', bytes: 657691, notes: [] }) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '1.0.18', file: 'dark-forest.apk', bytes: 657691, notes: [] }) });
     };`);
   show(null, null);
   await new Promise(r => setTimeout(r, 30));
-  const ds = w.document.querySelector('#desktopSlot');
-  ok(!!ds, '入口页应有 Windows 版下载槽位');
-  const links = w.document.querySelectorAll('#desktopSlot a.apk-get');
-  ok(links.length === 2, '应渲染两条 Windows 下载链接，实际 ' + links.length);
-  const hrefs = [...links].map(a => a.href);
-  ok(/^https:\/\/github\.com\//.test(hrefs[1] || ''), '完整版应指向 GitHub Release，实际 ' + JSON.stringify(hrefs));
-  ok(links[1] && links[1].getAttribute('target') === '_blank', '外链应新窗口打开');
-  // 轻量版：同源直链 + download 属性，不新窗口
-  ok(links[0] && /\/download\/dark-forest-1\.0\.15-tauri-setup\.exe$/.test(hrefs[0]), '轻量版应是本站直链，实际 ' + hrefs[0]);
-  ok(links[0] && links[0].getAttribute('download') === 'dark-forest-1.0.15-tauri-setup.exe', '轻量版应带 download 属性');
-  ok(links[0] && !links[0].getAttribute('target'), '本站直链不该新窗口打开');
-  ok(links[0] && /↓/.test(links[0].textContent), '本站直链的箭头应是 ↓');
-  ok(/tauri-setup\.exe$/.test(hrefs[0] || ''), '第一条应是轻量版（Tauri）');
-  ok(/win64-setup\.exe$/.test(hrefs[1] || ''), '第二条应是完整版（Electron）');
-  ok(links[0] && /1\.5 MB/.test(links[0].textContent), '轻量版应标出体积：' + (links[0] ? links[0].textContent.trim() : ''));
-  ok(links[0] && /下载 Windows 版/.test(links[0].textContent), '应有可读的按钮文字');
+  const dlBtn = w.document.querySelector('#dlBtn');
+  ok(!!dlBtn, '入口页应有「下载客户端」按钮');
+  ok(dlBtn && /下载客户端/.test(dlBtn.textContent), '按钮文字应是「下载客户端」');
+  ok(w.document.querySelectorAll('#apkSlot .apk-get').length === 1, '入口页只应有一个下载条目（不再堆三行）');
 
-  // 桌面壳里（DF_APP / file://）不给自己挂下载入口
-  w.eval(`window.__UI.desktop = null; window.DF_APP = 1;`);
+  // 点开是应用内弹层，列出各平台
+  dlBtn && dlBtn.click();
+  const dlg = w.document.querySelector('#dlDialog');
+  ok(!!dlg, '点按钮应弹出应用内下载弹层');
+  const dlinks = dlg ? [...dlg.querySelectorAll('a.apk-get')] : [];
+  ok(dlinks.length === 3, '弹层应列出 3 个安装包，实际 ' + dlinks.length);
+  const dhrefs = dlinks.map(a => a.href);
+  ok(/dark-forest\.apk$/.test(dhrefs[0] || ''), '第一项应是安卓版，实际 ' + dhrefs[0]);
+  ok(/\/download\/dark-forest-1\.0\.18-tauri-setup\.exe$/.test(dhrefs[1] || ''), '第二项应是轻量版（本站直链）');
+  ok(/^https:\/\/github\.com\//.test(dhrefs[2] || ''), '第三项应是完整版（GitHub 外链）');
+  ok(dlinks[0] && dlinks[0].getAttribute('download'), '本站直链应带 download 属性');
+  ok(dlinks[2] && dlinks[2].getAttribute('target') === '_blank', '外链应新窗口打开');
+  ok(dlinks[1] && /↓/.test(dlinks[1].textContent), '本站直链箭头应是 ↓');
+  ok(dlinks[2] && /↗/.test(dlinks[2].textContent), '外链箭头应是 ↗');
+  dlg && dlg.querySelector('[data-close]').click();
+  ok(!w.document.querySelector('#dlDialog'), '关闭后弹层应消失');
+
+  // 桌面壳 / APK 内不给自己挂下载入口
+  w.eval(`window.__UI.desktop = null; window.__UI.apk = null; window.DF_APP = 1;`);
   show(null, null);
   await new Promise(r => setTimeout(r, 30));
-  ok(!w.document.querySelector('#desktopSlot a'), '桌面版/APK 内不该出现 Windows 下载入口');
-  w.eval(`delete window.DF_APP; window.__UI.desktop = null;`);
+  ok(!w.document.querySelector('#dlBtn'), '桌面版/APK 内不该出现下载按钮');
+  w.eval(`delete window.DF_APP; window.__UI.desktop = null; window.__UI.apk = null;`);
   show(null, null);
 
   console.log('=== UI 17. 窄屏不画跨屏箭头，改在牌块上标名字 ===');
@@ -617,6 +629,44 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     ok(!w.document.querySelector('#actPlay').disabled, '提示消失后「出牌」应恢复');
   }
 
-  console.log(`\\nUI 结果: ${pass} 通过, ${fail} 失败`);
+  console.log('=== UI 20. 打击剩余手数 / 降维置灰 / 宽屏并排 ===');
+  {
+    // 20.1 别人的打击：不知道还要飞几手 → 显示"还需 ? 手到达"（早先误显示 0 手）
+    const g20 = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S20 = g20.state();
+    S20.players[0].galaxy = 1; S20.players[1].galaxy = 3;
+    S20.players[0].energy = 30;
+    S20.players[0].hand = [{ uid: 's20', key: 'nuke' }];
+    S20.currentIdx = 0; S20.step = 'action';
+    g20.playStrike('p0', 's20', 3);
+    const st20 = S20.players[0].strikes[0];
+    st20.progress = 1;
+    show(viewFor(g20, 'p1'), 'p1');       // B 是被打的人
+    await new Promise(r => setTimeout(r, 40));
+    const co = w.document.querySelector('#callout');
+    const coText = co ? co.textContent : '';
+    ok(coText.indexOf('还需 ? 手到达') >= 0, '被打方应看到"还需 ? 手到达"，实际 ' + coText);
+    ok(coText.indexOf('还需 0 手') < 0, '不该再显示"还需 0 手到达"，实际 ' + coText);
+
+    // 20.2 降维打击后的星系：星图节点带 dimmed 类
+    const S20b = g20.state();
+    S20b.markers[2].red = true;
+    show(viewFor(g20, 'p1'), 'p1');
+    await new Promise(r => setTimeout(r, 40));
+    const node2 = w.document.querySelector('.node[data-g="2"]');
+    ok(!!node2 && node2.classList.contains('dimmed'), '被降维的星系应带 dimmed 类');
+    const node1 = w.document.querySelector('.node[data-g="1"]');
+    ok(!!node1 && !node1.classList.contains('dimmed'), '其他星系不该带 dimmed 类');
+
+    // 20.3 宽屏：星图与弃牌堆在同一个 .arena-main 容器里（CSS 负责左右并排）
+    ok(!!w.document.querySelector('.arena-main'), '应有 .arena-main 容器');
+    ok(!!w.document.querySelector('.arena-main .map-wrap'), '.arena-main 里应有星图');
+    ok(!!w.document.querySelector('.arena-main .tray'), '.arena-main 里应有弃牌堆');
+    const css20 = fs.readFileSync(path.join(ROOT, 'web/style.css'), 'utf8');
+    ok(/\.arena-main\{[^}]*grid-template-columns:1fr 250px/.test(css20), '宽屏应把星图与弃牌堆左右并排');
+    ok(/\.arena-main\{grid-template-columns:1fr;grid-template-rows:auto auto/.test(css20), '窄屏应改回上下堆叠');
+  }
+
+  console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);  console.log(`\\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();

@@ -606,8 +606,13 @@
       const target = targets[0];
 
       if (!target) {
-        log(`「${def.name}」抵达 ${GALAXY_NAMES[st.targetGalaxy]}——空无一人，打击落空`, 'strike');
+        // 战报只写「什么打击抵达什么星系」——不写"空无一人"。
+        // 目标星系有没有人是核心情报，写出来等于给全场一台扫描器。
+        log(`「${def.name}」抵达 ${GALAXY_NAMES[st.targetGalaxy]}`, 'strike');
         ev('strike_miss', { actor: st.casterId, card: st.key, target: st.targetGalaxy });
+        // 光粒 / 湮灭 / 降维打的是"恒星"不是"人"：没人也要摧毁恒星，
+        // 与"被防御时照样摧毁"保持一致（卡面写的就是"无论是否被防御"）。
+        applyGalaxyEffects(st, def);
         if (caster) caster.strikes = caster.strikes.filter(s => s !== st);
         pushDiscard({ uid: st.uid, key: st.key }, st.casterId, { batch: nextBatch(), tag: 'discard' });
         return;
@@ -615,7 +620,6 @@
 
       const defenders = target.buildZone.filter(b => def.level !== INF && CARD_DEFS[b.key].defense >= def.level);
       const defended = defenders.length > 0;
-      const defName = defended ? CARD_DEFS[defenders[0].key].name : '';
       const wouldDie = !defended;
 
       // 科技锁死不杀人，自然轮不到光速飞船，先处理掉
@@ -651,17 +655,16 @@
       }
 
       if (defended) {
-        log(`${target.name}（${GALAXY_NAMES[st.targetGalaxy]}）的「${defName}」挡下了「${def.name}」`, 'strike');
+        // 只写"抵达"：谁挡下了不公开——写出来等于告诉全场"那个星系有人，还有防御"
+        log(`「${def.name}」抵达 ${GALAXY_NAMES[st.targetGalaxy]}`, 'strike');
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: true });
         applyGalaxyEffects(st, def);
-        if (def.key === 'annihilate') {
-          discardAllBuilds(target);
-          log(`${target.name} 弃置全部建设牌`, 'strike');
-        }
       } else {
-        eliminate(target, `被「${def.name}」命中 · ${GALAXY_NAMES[st.targetGalaxy]}`);
+        // 死讯本来就是公开的（座位卡会变灰），但理由里不再重复星系位置
+        eliminate(target, `被「${def.name}」命中`);
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false });
         applyGalaxyEffects(st, def);
+        log(`「${def.name}」抵达 ${GALAXY_NAMES[st.targetGalaxy]}`, 'strike');
       }
       // 只有真把人打死才配拿清场奖励；被挡下只是"打了，没死"
       finishStrike(st, caster, { killed: !defended });

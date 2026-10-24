@@ -1281,5 +1281,99 @@ console.log('=== 27. reward only on real kill ===');
   }
 }
 
-console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);
+// 28. 战报不暴露打击结果 + 光粒/湮灭落空也摧毁恒星
+console.log('=== 28. 战报只写"什么打击抵达什么星系" ===');
+{
+  const arm = (g, S, uid, target) => {
+    g.playStrike('p0', uid, target);
+    const st = S.players[0].strikes[0];
+    st.progress = st.required - 1;
+    return S.players[0].energy;
+  };
+
+  // 28.1 打空：不写"空无一人"（那等于告诉全场这个星系是空的）
+  {
+    const g = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S = g.state();
+    S.players[0].galaxy = 1; S.players[1].galaxy = 5;   // B 不在 2 号
+    S.players[0].energy = 30;
+    S.players[0].hand = [{ uid: 'st-m', key: 'nuke' }];
+    S.currentIdx = 0; S.step = 'action';
+    arm(g, S, 'st-m', 2);
+    g.endTurn('p0'); g.endTurn('p1');
+    const texts = S.log.map(l => l.text);
+    ok(texts.some(t => t.indexOf('抵达') >= 0 && t.indexOf('DX3906') >= 0), '战报应有「什么打击抵达什么星系」');
+    ok(!texts.some(t => t.indexOf('空无一人') >= 0), '战报不得写"空无一人"，实际 ' + JSON.stringify(texts));
+    ok(!texts.some(t => t.indexOf('落空') >= 0), '战报不得写"落空"，实际 ' + JSON.stringify(texts));
+  }
+
+  // 28.2 被防御：不写"某某的某某挡下了"（那等于告诉全场那儿有人还有防御）
+  {
+    const g = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S = g.state();
+    S.players[0].galaxy = 1; S.players[1].galaxy = 2;
+    S.players[0].energy = 30;
+    S.players[0].hand = [{ uid: 'st-d', key: 'nuke' }];
+    S.players[1].buildZone = [{ uid: 'bz', key: 'bunker' }];
+    S.currentIdx = 0; S.step = 'action';
+    arm(g, S, 'st-d', 2);
+    g.endTurn('p0'); g.endTurn('p1');
+    const texts = S.log.map(l => l.text);
+    ok(S.players[1].alive === true, '应被掩体星环挡下');
+    ok(!texts.some(t => t.indexOf('挡下') >= 0), '战报不得写"挡下"，实际 ' + JSON.stringify(texts));
+    ok(!texts.some(t => t.indexOf('掩体星环') >= 0), '战报不得点名防御建筑（会暴露谁在那个星系），实际 ' + JSON.stringify(texts));
+  }
+
+  // 28.3 光粒打击：打空 / 被挡，两种情况都摧毁恒星
+  {
+    const mk = (defend) => {
+      const g = createGame(['A', 'B'], { strikeTarget: 'open' });
+      const S = g.state();
+      S.players[0].galaxy = 1; S.players[1].galaxy = defend ? 2 : 5;
+      S.players[0].energy = 30;
+      S.players[0].hand = [{ uid: 'st-p', key: 'photoid' }];
+      if (defend) S.players[1].buildZone = [{ uid: 'bz', key: 'bunker' }];
+      S.currentIdx = 0; S.step = 'action';
+      arm(g, S, 'st-p', 2);
+      g.endTurn('p0'); g.endTurn('p1');
+      return S;
+    };
+    const miss = mk(false);
+    ok(miss.markers[2].black === true, '光粒打空也该摧毁恒星，实际 ' + JSON.stringify(miss.markers[2]));
+    const def = mk(true);
+    ok(def.markers[2].black === true, '光粒被挡下也该摧毁恒星，实际 ' + JSON.stringify(def.markers[2]));
+  }
+
+  // 28.4 湮灭打击：打空也摧毁恒星 + 标记紫色
+  {
+    const g = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S = g.state();
+    S.players[0].galaxy = 1; S.players[1].galaxy = 5;
+    S.players[0].energy = 30;
+    S.players[0].hand = [{ uid: 'st-a', key: 'annihilate' }];
+    S.currentIdx = 0; S.step = 'action';
+    arm(g, S, 'st-a', 2);
+    g.endTurn('p0'); g.endTurn('p1');
+    ok(S.markers[2].black === true, '湮灭打空也该摧毁恒星');
+    ok(S.markers[2].purple === true, '湮灭打空也该留下紫色标记');
+  }
+
+  // 28.5 真淘汰：死讯仍然公开（座位卡会变灰），但理由里不再重复星系位置
+  {
+    const g = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S = g.state();
+    S.players[0].galaxy = 1; S.players[1].galaxy = 2;
+    S.players[0].energy = 30;
+    S.players[0].hand = [{ uid: 'st-k', key: 'nuke' }];
+    S.currentIdx = 0; S.step = 'action';
+    arm(g, S, 'st-k', 2);
+    g.endTurn('p0'); g.endTurn('p1');
+    ok(S.players[1].alive === false, 'B 应被淘汰');
+    const elim = S.log.find(l => l.kind === 'elim');
+    ok(!!elim, '应有淘汰战报');
+    ok(elim && elim.text.indexOf('DX3906') < 0, '淘汰理由里不该再写星系位置，实际 ' + (elim ? elim.text : ''));
+  }
+}
+
+console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail?1:0);
