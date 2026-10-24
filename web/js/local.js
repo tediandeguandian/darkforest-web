@@ -219,7 +219,7 @@ const Net = (() => {
     }
   }
 
-  /** 超时推进（广播 60s / 光速飞船待决 30s） */
+  /** 超时推进（广播 15s / 光速飞船待决 30s） */
   function startTicker() {
     if (tickTimer) return;
     tickTimer = setInterval(() => {
@@ -231,8 +231,30 @@ const Net = (() => {
       if (changed) {
         pushView();
         driveAI();
+        return;
       }
+      watchdog();
     }, 700);
+  }
+
+  /* 看门狗：局面 6 秒没变、但仍然该 AI 行动 → 强制它动一下。
+     没有这层保险，AI 一旦拿不出动作（决策返回空），牌桌就会一直干等。
+     广播 / 光速飞船待决不算——那是在等规则规定的人，不插手。 */
+  let lastSig = '', lastChangeAt = Date.now();
+  function watchdog() {
+    const S = game && game.state();
+    if (!S || S.phase !== 'playing') return;
+    const sig = [S.turnIndex, S.step, S.currentIdx,
+                 S.broadcast ? S.broadcast.stage : '-',
+                 S.escapePending ? S.escapePending.targetId : '-'].join('|');
+    if (sig !== lastSig) { lastSig = sig; lastChangeAt = Date.now(); return; }
+    if (Date.now() - lastChangeAt < 6000) return;
+    if (!aiPending()) return;                       // 该人类了，不插手
+    if (S.broadcast || S.escapePending) return;     // 在等规则规定的人
+    const cur = S.players[S.currentIdx];
+    if (!cur || !seats.some(s => s.isAI && s.playerId === cur.id)) return;
+    const r = game.endTurn(cur.id);                 // 替它收手，让局面往前走
+    if (r && r.ok) { lastChangeAt = Date.now(); pushView(); }
   }
 
   function stopTicker() {
@@ -313,7 +335,8 @@ const Net = (() => {
     start() {
       if (started) return emit('error', '对局已经开始');
       if (seats.length < 2) return emit('error', '至少需要 2 名玩家');
-      game = createGame(seats.map(s => s.name), { mode, strikeTarget });
+      // 本地局：人就在旁边等，广播收集只等 15 秒（联机才等 60 秒）
+      game = createGame(seats.map(s => s.name), { mode, strikeTarget, broadcastWaitMs: 15000 });
       started = true;
       pushView();
       pushLobby();

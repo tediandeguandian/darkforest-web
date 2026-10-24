@@ -164,6 +164,7 @@ function viewFor(game, playerId) {
     step: S.step,
     thinking: false,   // 由 server 层填充
     actionsThisTurn: S.actionCount || 0,
+    broadcastsThisTurn: S.broadcastsThisTurn || 0,
     discardUsed: !!S.discardUsed,
     players,
     deckCount: S.deck.length,

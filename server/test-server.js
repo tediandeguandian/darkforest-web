@@ -1375,5 +1375,57 @@ console.log('=== 28. 战报只写"什么打击抵达什么星系" ===');
   }
 }
 
+console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);// 29. 本地局人机驱动：AI 不能干等（曾表现为"智子 5 分钟不动"）
+console.log('=== 29. AI 不会卡住不动 ===');
+{
+  // 29.1 照 local.js 的驱动方式（一次一步）跑全 AI 局，AI 回合必须有动作
+  let emptyTurns = 0, totalTurns = 0, maxBcast = 0, games = 0;
+  for (let i = 0; i < 6; i++) {
+    const levels = [LEVEL_KEYS[i % 4], LEVEL_KEYS[(i + 1) % 4], LEVEL_KEYS[(i + 2) % 4]];
+    const gg = createGame(levels.map((lv, k) => lv + k), { broadcastWaitMs: 15000 });
+    const seats = new Map(levels.map((lv, k) => ['p' + k, { level: lv, seed: 2000 + i * 31 + k }]));
+    let steps = 0;
+    while (gg.state().phase === 'playing' && steps < 8000) {
+      const S = gg.state();
+      const cur = S.players[S.currentIdx];
+      if (!cur) break;
+      const played = runAI(gg, seats, viewFor, { maxSteps: 1 });
+      totalTurns++;
+      if (!played || !played.length) {
+        // 只有"等真人回应 / 等光速飞船"才算正常等待
+        if (!S.broadcast && !S.escapePending) emptyTurns++;
+        break;
+      }
+      const b = gg.state().broadcastsThisTurn || 0;
+      if (b > maxBcast) maxBcast = b;
+      steps++;
+    }
+    games++;
+  }
+  ok(emptyTurns === 0, 'AI 回合不得出现"没有动作"的干等（空动作=牌桌冻结），出现 ' + emptyTurns + ' 次');
+  ok(totalTurns > 20, '本项应真的驱动了 AI（步数 ' + totalTurns + '）');
+  ok(maxBcast <= 1, '一回合最多广播一次（连发就要连等一轮回应），实际最多 ' + maxBcast + ' 次');
+
+  // 29.2 广播等待时长可配：联机 60 秒 / 本地 15 秒
+  const mk = (opts) => {
+    const g = createGame(['A', 'B'], opts);
+    const S = g.state();
+    // 星图是拓扑不是数轴：1-2-6 相连，所以 1 / 2 / 6 分别是施放者 / 目标 / 候选者
+    S.players[0].galaxy = 1; S.players[1].galaxy = 6;
+    S.players[0].energy = 20;
+    S.players[0].hand = [{ uid: 'bw1', key: 'star_coop' }];
+    // 对方得"够得着且有广播牌"才会成为候选，否则走的是"没人能回"的随机 5-20 秒分支
+    S.players[1].energy = 20;
+    S.players[1].hand = [{ uid: 'bw2', key: 'star_coop' }];
+    S.currentIdx = 0; S.step = 'action';
+    g.playBroadcast('p0', 'bw1', 2);
+    return S.broadcast ? S.broadcast.deadline - S.broadcast.createdAt : null;
+  };
+  const w60 = mk({});
+  const w15 = mk({ broadcastWaitMs: 15000 });
+  ok(w60 === 60000, '默认等 60 秒（联机），实际 ' + w60);
+  ok(w15 === 15000, '本地局应等 15 秒，实际 ' + w15);
+}
+
 console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail?1:0);

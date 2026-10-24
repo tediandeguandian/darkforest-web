@@ -39,6 +39,10 @@
      *   fast     —— 行动阶段可以先弃牌换牌再出牌；回合开始 + 回合结束各补一次
      */
     const MODE = (opts && opts.mode === 'fast') ? 'fast' : 'standard';
+    /* 广播收集阶段的等待上限（毫秒）：联机 60 秒（人可能不在）；
+       本地局人就在现场，用 15 秒（local.js 传 broadcastWaitMs）——
+       否则人机每发一次广播就要干等一分钟，看着就像"AI 卡住了"。 */
+    const BROADCAST_WAIT = Number((opts && opts.broadcastWaitMs) || 60000);
     /**
      * 打击目标显示（房间设置）：
      *   open   —— 默认，与旧版完全一致：打击正面朝上，全场看到「谁 → 哪个星系」
@@ -163,6 +167,7 @@
       S.step = 'production';
       S.broadcast = null;
       S.actionCount = 0;
+      S.broadcastsThisTurn = 0;   // 本回合已发广播次数（AI 一回合只发一次）
       S.discardUsed = false;
 
       tickStrikes(p);
@@ -353,7 +358,7 @@
         stage: 'collecting',
         createdAt: now,
         // 有人能回应：最多等 60 秒；没人能回应：随机等 5–20 秒后自动结算
-        deadline: now + (candidates.length ? 60000 : 5000 + Math.floor(Math.random() * 15001)),
+        deadline: now + (candidates.length ? BROADCAST_WAIT : 5000 + Math.floor(Math.random() * 15001)),
         chooseDeadline: null,
       };
 
@@ -366,6 +371,7 @@
       const rangeText = radius === null ? '任意星系' : `距目标 ≤ ${radius} 格`;
       log(`${p.name} 发布「${familyName(card.key)}」→ ${GALAXY_NAMES[targetGalaxy]}（${rangeText}）`, 'broadcast');
       ev('broadcast_cast', { actor: p.id, family: hideFace(card.key), target: targetGalaxy, radius });
+      S.broadcastsThisTurn = (S.broadcastsThisTurn || 0) + 1;
       markActed();
       return { ok: true };
     }
