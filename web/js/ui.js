@@ -15,7 +15,7 @@ const UI = {
   strikeSeq: null,     // 已展示过的最大"打击落地"事件 id（隐藏目标模式的落点播报）
   strikeReveal: null,  // { text, sub, until }：落地瞬间的落点横幅
   turnKey: null,       // 当前回合标识（turnIndex + 当前玩家），用于检测换人
-  gate: null,          // 换人时的 5 秒提示 { name, mine, until }
+  gate: null,          // 换人时的 3 秒提示 { name, mine, until }
 };
 
 const $ = s => document.querySelector(s);
@@ -46,7 +46,7 @@ const GEAR = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke
  * 只调其中一个都不像毛玻璃：只降透明度会花，只加模糊会糊成一块。
  * ============================================================ */
 const UI_PREF_KEY = 'df_ui_pref';
-const UI_PREF_DEFAULT = { frost: true, level: 0.45 };
+const UI_PREF_DEFAULT = { frost: true, level: 0 };
 
 function loadUiPref() {
   try {
@@ -682,7 +682,7 @@ function renderGame() {
   const v = Net.view;
   if (!v) return;
 
-  /* 换人提示：轮到一个人时，先给 5 秒"XX 即将出牌"，避免瞬间跳过来看不清 */
+  /* 换人提示：轮到一个人时，先给 3 秒"XX 即将出牌"，避免瞬间跳过来看不清 */
   const turnKey = `${v.turnIndex}:${v.currentPlayerId}`;
   if (v.phase === 'playing' && v.step === 'action') {
     if (UI.turnKey !== turnKey) {
@@ -690,10 +690,10 @@ function renderGame() {
       UI.gate = {
         name: cp ? cp.name : '',
         mine: v.currentPlayerId === v.me.id,
-        until: Date.now() + 5000,
+        until: Date.now() + 3000,
       };
       clearTimeout(UI.gateTimer);
-      UI.gateTimer = setTimeout(() => { UI.gate = null; renderGame(); }, 5100);
+      UI.gateTimer = setTimeout(() => { UI.gate = null; renderGame(); }, 3100);
     }
     UI.turnKey = turnKey;
   }
@@ -1378,7 +1378,11 @@ function renderHand(v) {
       const u = cardEl.dataset.uid;
       const c = hand.find(x => x.uid === u);
       if (c && CARD_DEFS[c.key].escape) {
-        toast('光速飞船不能主动打出——只有在遭到打击、即将被摧毁时才能启动');
+        // 光速飞船：不能「出」（出牌按钮对它恒为灰），但**可以弃**——
+        // 留着保命只是默认选择，用户想换牌时不该被拦住。
+        // （曾经的 bug：这里直接 return，连选择都做不到，等于永远弃不掉。）
+        if (UI.selected.has(u)) UI.selected.delete(u); else UI.selected.add(u);
+        renderGame();
         return;
       }
       if (UI.selected.has(u)) UI.selected.delete(u); else UI.selected.add(u);

@@ -36,7 +36,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function send(room, ws, obj) { await room.webSocketMessage(ws, JSON.stringify(obj)); }
 
-const env = { META: null, AI_THINK_MIN: 5000, AI_THINK_MAX: 10000 };
+const env = { META: null, AI_THINK_MIN: 3000, AI_THINK_MAX: 10000 };
 const ctx = makeCtx();
 let room = new Room(ctx, env);
 await room.fetch(new Request('https://do/init?room=TEST1', { method: 'POST' }));

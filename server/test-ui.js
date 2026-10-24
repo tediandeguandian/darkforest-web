@@ -412,6 +412,8 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   ok(w.document.body.classList.contains('frost'), '毛玻璃默认开启');
   const a0 = parseFloat(w.document.body.style.getPropertyValue('--frost-a') || '0');
   ok(a0 > 0, '应写入 --frost-a，实际 ' + a0);
+  // 默认浓度 0%（滑杆最左）→ 映射到区间下界 0.40，要"看得出是玻璃"又不压字
+  ok(Math.abs(a0 - 0.40) < 0.001, '默认浓度应为 0%（--frost-a = 0.40），实际 ' + a0);
   ok(/px$/.test(w.document.body.style.getPropertyValue('--frost-blur')), '应写入 --frost-blur');
 
   // 拉高浓度 → 面板更不透明（模糊也跟着变强）
@@ -548,6 +550,73 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   ok((w.document.querySelector('#arrowLayer').innerHTML || '').length > 0, '宽屏仍应画出箭头线');
   ok(w.document.querySelectorAll('.dc-who').length >= 2, '名字标签仍然在 DOM 里（宽屏用 CSS 藏掉）');
 
-  console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
+  console.log('=== UI 18. 光速飞船：点得动（为了弃置），出牌按钮恒灰 ===');
+  {
+    const g18 = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S18 = g18.state();
+    S18.players[0].galaxy = 2; S18.players[1].galaxy = 7;
+    S18.players[0].energy = 10;
+    S18.players[0].hand = [{ uid: 'sp1', key: 'lightship' }, { uid: 'sp2', key: 'photoid' }];
+    S18.currentIdx = 0; S18.step = 'action';
+    show(viewFor(g18, 'p0'), 'p0');
+    // 第一次渲染会挂 3 秒换人提示（按钮全灰），清掉再渲染一次才是正常可操作状态
+    w.__UI.gate = null;
+    w.__render();
+    await new Promise(r => setTimeout(r, 30));
+
+    const ship = w.document.querySelector('.pcard[data-uid="sp1"]');
+    ok(!!ship, '手里应有光速飞船牌');
+    ok(ship && ship.classList.contains('reserved'), '飞船牌应带 reserved 标记');
+
+    // 点它：曾经的 bug 是弹个 toast 就 return，连选都选不了。
+    // ⚠️ 点了会 renderGame() 重建 DOM，旧引用失效——每次断言都要重新查
+    ship && ship.click();
+    const shipSel = w.document.querySelector('.pcard[data-uid="sp1"]');
+    ok(shipSel && shipSel.classList.contains('selected'), '点光速飞船应能选中（为了弃置），实际 class=' + (shipSel ? shipSel.className : ''));
+    ok(w.document.querySelector('#actPlay').disabled, '选中飞船时「出牌」应置灰');
+    ok(!w.document.querySelector('#actDiscard').disabled, '选中飞船时「弃置」应可用');
+    ok(/弃置 1 张/.test(w.document.querySelector('#actDiscard').textContent), '弃置按钮应显示张数');
+
+    // 再点一次取消选中
+    const shipAgain = w.document.querySelector('.pcard[data-uid="sp1"]');
+    shipAgain && shipAgain.click();
+    ok(!w.document.querySelector('.pcard[data-uid="sp1"]').classList.contains('selected'), '再点一次应取消选中');
+    ok(w.document.querySelector('#actDiscard').disabled, '没选牌时「弃置」应置灰');
+
+    // 普通牌不受影响
+    const other = w.document.querySelector('.pcard[data-uid="sp2"]');
+    other && other.click();
+    ok(w.document.querySelector('.pcard[data-uid="sp2"]').classList.contains('selected'), '普通牌照常能选中');
+    ok(!w.document.querySelector('#actDiscard').disabled, '选中普通牌也能弃');
+  }
+
+  console.log('=== UI 19. 换人提示：3 秒 ===');
+  {
+    const g19 = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S19 = g19.state();
+    S19.players[0].galaxy = 1; S19.players[1].galaxy = 4;
+    S19.players[0].energy = 10;
+    S19.players[0].hand = [{ uid: 'q1', key: 'solar' }];   // 建设牌：不用选目标，按钮状态只受 gate 影响
+    S19.currentIdx = 0; S19.step = 'action';
+    show(viewFor(g19, 'p0'), 'p0');   // turnKey 从 null 变过来 → 挂提示
+    await new Promise(r => setTimeout(r, 20));
+    ok(!!w.__UI.gate, '换人应出现提示');
+    ok(w.__UI.gate && w.__UI.gate.mine === true, '轮到自己应标记 mine');
+    const dur = w.__UI.gate ? (w.__UI.gate.until - Date.now()) : -1;
+    ok(dur > 2700 && dur <= 3000, '提示时长应为 3 秒，实际 ' + dur + 'ms');
+    const html19 = w.document.querySelector('#app').innerHTML;
+    ok(html19.indexOf('轮到你出牌') >= 0, '应显示「轮到你出牌」');
+    // 选一张牌（提示期间允许选，只是不能确认）
+    const q = w.document.querySelector('.pcard[data-uid="q1"]');
+    q && q.click();
+    ok(w.document.querySelector('.pcard[data-uid="q1"]').classList.contains('selected'), '提示期间应能选牌');
+    ok(w.document.querySelector('#actPlay').disabled, '提示期间即使选了牌「出牌」也置灰');
+    // 清掉提示后恢复可操作
+    w.__UI.gate = null;
+    w.__render();
+    ok(!w.document.querySelector('#actPlay').disabled, '提示消失后「出牌」应恢复');
+  }
+
+  console.log(`\\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();

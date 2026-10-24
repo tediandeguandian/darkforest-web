@@ -1,7 +1,7 @@
 {
   "name": "dark-forest",
   "productName": "黑暗森林",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "三体 · 黑暗森林 桌面版",
   "main": "main.js",
   "private": true,

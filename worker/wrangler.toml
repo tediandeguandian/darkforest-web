@@ -39,5 +39,5 @@ new_sqlite_classes = ["Room"]
 
 # 人机"思考"时长（毫秒）：玩家能看到人机在犹豫，而不是秒出牌
 [vars]
-AI_THINK_MIN = "5000"
+AI_THINK_MIN = "3000"
 AI_THINK_MAX = "10000"

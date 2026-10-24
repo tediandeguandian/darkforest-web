@@ -360,9 +360,9 @@ export class Room {
     return seats;
   }
 
-  /** 人机思考时长（毫秒）：默认 5–10 秒，可用环境变量调 */
+  /** 人机思考时长（毫秒）：默认 3–10 秒，可用环境变量调 */
   thinkMs() {
-    const min = Number((this.env && this.env.AI_THINK_MIN) || 5000);
+    const min = Number((this.env && this.env.AI_THINK_MIN) || 3000);
     const max = Number((this.env && this.env.AI_THINK_MAX) || 10000);
     return min + Math.floor(Math.random() * Math.max(0, max - min));
   }

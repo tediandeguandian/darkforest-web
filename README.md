@@ -231,11 +231,11 @@ npm run deploy
 
 | 产物 | 说明 |
 |---|---|
-| `黑暗森林-v1.0.16.apk` | 644 KB（背景占大头），离线 / 同一个 Wi-Fi / 联机三种玩法 |
+| `黑暗森林-v1.0.17.apk` | 644 KB（背景占大头），离线 / 同一个 Wi-Fi / 联机三种玩法 |
 | `apk/` | 构建工程（MainActivity + LanServer + 一键 `build.sh`） |
 | `desktop/` | Windows 桌面版工程（Electron，`sh build-win.sh` 出 exe） |
-| `desktop/dist/黑暗森林-1.0.16-win64-setup.exe` | Windows 安装程序（112 MB，向导安装 + 可卸载） |
-| `desktop/dist/黑暗森林-win64-v1.0.16.zip` | Windows 免安装版（约 144 MB，解压双击 `dark-forest.exe`） |
+| `desktop/dist/黑暗森林-1.0.17-win64-setup.exe` | Windows 安装程序（112 MB，向导安装 + 可卸载） |
+| `desktop/dist/黑暗森林-win64-v1.0.17.zip` | Windows 免安装版（约 144 MB，解压双击 `dark-forest.exe`） |
 | GitHub | https://github.com/tediandeguandian/darkforest-web （源码 + Release 下载页） |
 | `desktop-tauri/` | Windows Tauri 版工程（安装包 **约 1.5 MB**，用系统 WebView2；CI 自动构建，见 `.github/workflows/build-windows.yml`） |
 

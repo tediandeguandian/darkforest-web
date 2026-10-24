@@ -1,4 +1,0 @@
-src/com/shuwang/darkforest/LanServer.java
-src/com/shuwang/darkforest/MainActivity.java
-src/com/shuwang/darkforest/ApkProvider.java
-build/gen/com/shuwang/darkforest/R.java

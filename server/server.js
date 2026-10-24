@@ -86,8 +86,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
  * 驱动人机行动，直到轮到真人。
  * 每次只走一步并推送状态，让前端能看见逐个动作（而不是一次性跳到结果）。
  */
-/* 人机"思考"时长：默认 5–10 秒，让玩家看得清、反应得过来 */
-const AI_MIN = Number(process.env.AI_THINK_MIN || 5000);
+/* 人机"思考"时长：默认 3–10 秒，让玩家看得清、反应得过来 */
+const AI_MIN = Number(process.env.AI_THINK_MIN || 3000);
 const AI_MAX = Number(process.env.AI_THINK_MAX || 10000);
 const thinkTime = () => AI_MIN + Math.floor(Math.random() * Math.max(0, AI_MAX - AI_MIN));
 

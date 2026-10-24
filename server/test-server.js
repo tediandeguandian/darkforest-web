@@ -528,6 +528,24 @@ function setupShipCase(targetEnergy) {
   ok(S.step === 'action', '应接回被打断的回合，实际 ' + S.step);
 }
 
+// 16.5 不想要的飞船可以弃掉
+// （曾经的 bug 在 UI 层：点牌直接弹"不能主动打出"并 return，连选中都做不到，
+//  等于手里攥着飞船就永远弃不掉、也换不了牌）
+{
+  const g = createGame(['A','B']);
+  const S = g.state();
+  S.players[0].energy = 20;
+  S.players[0].hand = [{ uid: 'y1', key: 'lightship' }, { uid: 'y2', key: 'photoid' }];
+  S.currentIdx = 0; S.step = 'action';
+  const r = g.discardCards('p0', ['y1']);
+  ok(r.ok === true, '光速飞船应可以弃置，实际 ' + JSON.stringify(r));
+  ok(!S.players[0].hand.some(c => c.uid === 'y1'), '弃置后飞船牌应离手');
+  // 标准局弃牌即结束回合，回合结束统一补满 4 张——所以这里该是 4，不是 1
+  ok(S.players[0].hand.length === 4, '弃牌结束回合后应补满 4 张，实际 ' + S.players[0].hand.length);
+  const piles = S.discard.current.concat(S.discard.last);
+  ok(piles.some(d => d.key === 'lightship'), '飞船牌应进弃牌堆');
+}
+
 // 16.4 放弃 → 被淘汰
 {
   const g = createGame(['A','B']);
