@@ -236,7 +236,7 @@ npm run deploy
 | `desktop/dist/黑暗森林-1.0.15-win64-setup.exe` | Windows 安装程序（112 MB，向导安装 + 可卸载） |
 | `desktop/dist/黑暗森林-win64-v1.0.15.zip` | Windows 免安装版（约 144 MB，解压双击 `dark-forest.exe`） |
 | GitHub | https://github.com/tediandeguandian/darkforest-web （源码 + Release 下载页） |
-| `desktop-tauri/` | Windows Tauri 版工程（安装包约 5 MB，在 Windows / CI 上构建，见 `.github/workflows/build-windows.yml`） |
+| `desktop-tauri/` | Windows Tauri 版工程（安装包 **约 1.5 MB**，用系统 WebView2；CI 自动构建，见 `.github/workflows/build-windows.yml`） |
 
 **离线**：WebView 里跑完整的 `shared/rules.js` + `shared/ai.js`，四档人机可用，飞行模式下正常。
 
@@ -244,8 +244,8 @@ npm run deploy
 两种外壳任选：
 * **Electron**（已打好，安装程序 104 MB / 免安装 zip 140 MB）：零依赖，任何 Windows 10/11 都能跑；但 exe 不能自己更新，
   发版让对方重下覆盖即可（存档与设置不受影响）。
-* **Tauri**（工程已就绪，安装包约 5 MB）：用系统 WebView2，安装程序会自动检测、
-  缺了就从微软官网下载；需要 Windows 或 GitHub Actions 才能出包。
+* **Tauri**（**已由 CI 自动出包，约 1.5 MB**）：用系统 WebView2，安装程序会自动检测、
+  缺了就从微软官网下载；打 tag 发版时 GitHub Actions 会自动构建并挂到 Release 上。
 和 APK 的区别是没有「局域网开服」（那需要把 `server/` 的 Node 服务一起塞进去）。
 
 **局域网**：主机手机开一个 HTTP 服务（`LanServer`），同一 Wi-Fi 下其他人用浏览器打开 `http://手机IP:8080` 即可加入。中继只转发消息、不做判定——权威状态始终在主机的 WebView 里，所以规则只有一份。

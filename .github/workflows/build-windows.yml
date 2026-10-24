@@ -21,6 +21,10 @@ jobs:
         with:
           node-version: "20"
 
+      - name: 同步版本号（唯一真源 desktop/package.json）
+        shell: bash
+        run: sh tools/sync-version.sh
+
       - name: 整理前端（web/ + shared/ → desktop-tauri/www）
         shell: bash
         run: sh desktop-tauri/prep.sh

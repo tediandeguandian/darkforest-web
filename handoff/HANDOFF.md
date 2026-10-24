@@ -212,6 +212,11 @@ GitHub：https://github.com/tediandeguandian/darkforest-web
       dark-forest-1.0.14-win64.zip         140 MB
       dark-forest-1.0.14.apk               642 KB
   · 发布脚本：tools/publish-github.sh <仓库名> <PAT> <说明文件>
+  · CI：.github/workflows/build-windows.yml —— 每次打 tag 自动构建
+      Tauri 安装包（约 1.5 MB）与 Electron 安装包（约 100 MB），并自动挂到对应 Release。
+      踩过的坑：electron-builder 的 electronDist 那行是本机 macOS 沙箱专用，
+      留在配置里会让 Windows runner 直接失败（已删）；图标改成提交进仓库的 desktop/assets/icon.ico，
+      runner 上默认没有 Pillow，现场生成会失败。
 ```
 
 未包含（体积原因）：`node_modules`、`backup/`（历史基线）、`三体黑暗森林卡牌图鉴/`（原始卡牌扫描图，47 MB）。
