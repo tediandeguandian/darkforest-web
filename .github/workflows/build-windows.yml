@@ -14,6 +14,9 @@ jobs:
   tauri:
     name: Tauri 安装包（小）
     runs-on: windows-latest
+    # softprops/action-gh-release 要 contents:write，否则静默失败（被 continue-on-error 吞掉）
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -69,6 +72,8 @@ jobs:
   electron:
     name: Electron 安装包（大，零依赖）
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 

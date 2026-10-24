@@ -2,7 +2,7 @@
 
 > 给下一个接手的 AI 或人类开发者。读完这一份，你应该能在 10 分钟内跑起来、30 分钟内改第一个需求。
 >
-> 项目版本：**v1.0.15**（2026-10-24）
+> 项目版本：**v1.0.16**（2026-10-24）
 > 线上：<https://darkforest.dpdns.org>（Cloudflare Worker `dark-forest` + Durable Object）
 > APK：`黑暗森林-v1.0.14.apk`（644 KB，versionCode 20，含 5 档图标 + 自适应图标 + 两张背景）
 
@@ -101,7 +101,7 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 测试 | — | 267（规则）+ 19（UI 冒烟）+ 34（DO） |
 | 观战 / 回放 / 战绩 | — | ⬜ 未开始 |
 | 房主移交 / 踢人 | — | ⬜ 未开始 |
-| 真机验证 APK | — | ⚠️ v1.0.15 已出包（签名可覆盖升级），仍未在真安卓机跑过 |
+| 真机验证 APK | — | ⚠️ v1.0.16 已出包（签名可覆盖升级），仍未在真安卓机跑过 |
 
 ---
 
@@ -154,6 +154,8 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 房间不持久 | 内存房间 3 小时无人在线即回收；DO 房间靠存储 | 长局别中途全退 |
 | 1.0.4 及更早只能跳浏览器 | 那些版本的更新是 `openUrl` 交给系统浏览器，多点两下、还得手动点安装包 | 从 1.0.5 起是应用内下载 + 直接唤起安装器；旧版需手动装一次 |
 | 1.0.1/1.0.2 无法自更新 | 那两版的检测代码用相对路径 + 服务端没给静态 CORS，属于"装上去就再也收不到提示" | 让用户手动装一次 v1.0.3；从 1.0.3 起提示链路才通 |
+| 「谁出的牌」提示 | 宽屏：从座位卡画一条贝塞尔曲线到弃牌块（`.arrow-layer`，fixed 全屏 SVG）；**窄屏（≤1100px）不画**，改在牌块上显示 `.dc-who` 出牌人名 | 窄屏布局是上下堆叠的，跨屏线会盖住星图与提示文字。归属信息由 `view.js` 的 `discardEntry.actor/actorName` 提供（本来就是公开信息） |
+| CI 自动挂 Release | `softprops/action-gh-release@v2` 需要 `permissions: contents: write`，否则静默失败（被 continue-on-error 吞掉） | tag 由 Release 创建触发 CI，产物会自动挂到对应 Release；v1.0.16 因缺权限没挂上，手动补传 |
 | 广播不泄露坐标 | 战报/事件里广播**只给射程**（`radius`），不给实际距离（`distance` 这个字段在广播事件里根本不存在） | 目标星系是公开的，实际距离一公开，发布者坐标就公开了。AI 那边同样只准用 `radius`——用它反推位置才和人眼看到的一样多 |
 | Worker 自定义域名 | `worker/wrangler.toml` 的 routes 两个都要挂：darkforest（新）+ shuwang（旧，用户在其 Cloudflare 侧配了 301 → 新域名） | ⚠️ **删掉旧域名那条 custom domain，Cloudflare 会把它的 DNS 记录一起删掉**，域名直接不解析，用户配的重定向规则也会失效。两条一起挂着，规则优先级更高（301 生效），互不干扰 |
 | 桌面版下载入口 | 入口页读 `web/download/desktop.json`。**轻量版（1.5 MB）放本站 `/download/` 直链**，完整版跳 GitHub Release；`tools/publish-github.sh <仓库> <PAT> <说明> <Tauri安装包>` 第 4 个参数给了安装包就自动拷进 `web/download/` 并改成本站直链，不给就退回外链 | 105 MB 不能走 Worker 静态资源（免费额度 100 MB/文件）；1.5 MB 随便放。UI 按 URL 是不是 `http(s)://` 开头自动切换：本站直链加 `download` 属性、箭头 ↓；外链 `target=_blank`、箭头 ↗ |
@@ -203,9 +205,9 @@ HANDOFF.md                  本文件
 三体黑暗森林桌游-网页化设计与AI方案.md   完整设计文档（1240 行）
 README.md                   项目说明与运行方式
 shared/ server/ worker/ web/ apk/ game/ tools/
-黑暗森林-v1.0.15.apk        现成安装包（v1.5 也留着，用于回退对照）
-desktop/dist/黑暗森林-1.0.15-win64-setup.exe  Windows 安装程序（112 MB，NSIS）
-desktop/dist/黑暗森林-win64-v1.0.15.zip       Windows 免安装版（144 MB）
+黑暗森林-v1.0.16.apk        现成安装包（v1.5 也留着，用于回退对照）
+desktop/dist/黑暗森林-1.0.16-win64-setup.exe  Windows 安装程序（105 MB，NSIS）
+desktop/dist/黑暗森林-win64-v1.0.16.zip       Windows 免安装版（142 MB）
 
 GitHub：https://github.com/tediandeguandian/darkforest-web
   · 代码已推 main 分支（144 个文件，不含 node_modules 与构建产物）
