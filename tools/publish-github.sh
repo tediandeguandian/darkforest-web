@@ -12,10 +12,10 @@
 #   Release 附件上限 2 GB/个，正合适。
 # ============================================================
 set -e
-REPO="${1:-}"
+REPO="${1:-darkforest-web}"
 TOKEN="${2:-}"
-BODY="${3:-}"
-[ -n "$REPO" ] && [ -n "$TOKEN" ] || { echo "用法: sh tools/publish-github.sh <仓库名> <PAT> [说明]" >&2; exit 1; }
+BODY_FILE="${3:-}"
+[ -n "$REPO" ] && [ -n "$TOKEN" ] || { echo "用法: sh tools/publish-github.sh <仓库名> <PAT> [说明文件]" >&2; exit 1; }
 
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 cd "$HERE"
@@ -43,12 +43,24 @@ git branch -M main 2>/dev/null || true
 git remote remove origin 2>/dev/null || true
 git remote add origin "https://$OWNER:$TOKEN@github.com/$OWNER/$REPO.git"
 git push -u origin main 2>&1 | tail -3
+# 推完就把 remote 里明文的 token 抹掉（别留在 .git/config 里）
+git remote set-url origin "https://github.com/$OWNER/$REPO.git"
 
 echo "· 建 Release v$VER"
 TAG="v$VER"
+PAYLOAD=$(BODY_FILE="$BODY_FILE" TAG="$TAG" node -e '
+const fs = require("fs");
+let body = "";
+if (process.env.BODY_FILE && fs.existsSync(process.env.BODY_FILE)) body = fs.readFileSync(process.env.BODY_FILE, "utf8");
+process.stdout.write(JSON.stringify({
+  tag_name: process.env.TAG,
+  name: "黑暗森林 " + process.env.TAG,
+  body,
+  draft: false,
+  prerelease: false,
+}));')
 REL=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
-  "$API/repos/$OWNER/$REPO/releases" \
-  -d "{\"tag_name\":\"$TAG\",\"name\":\"黑暗森林 $TAG\",\"body\":\"$BODY\",\"draft\":false,\"prerelease\":false}")
+  "$API/repos/$OWNER/$REPO/releases" -d "$PAYLOAD")
 ID=$(printf '%s' "$REL" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.stdout.write(String(j.id||''))}catch(e){}})")
 [ -n "$ID" ] || { echo "✗ 建 Release 失败：$REL" >&2; exit 1; }
 
