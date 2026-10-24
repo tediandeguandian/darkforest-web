@@ -203,6 +203,14 @@ shared/ server/ worker/ web/ apk/ game/ tools/
 黑暗森林-v1.0.14.apk        现成安装包（v1.5 也留着，用于回退对照）
 desktop/dist/黑暗森林-1.0.14-win64-setup.exe  Windows 安装程序（104 MB，NSIS）
 desktop/dist/黑暗森林-win64-v1.0.14.zip       Windows 免安装版（140 MB）
+
+GitHub：https://github.com/tediandeguandian/darkforest-web
+  · 代码已推 main 分支（144 个文件，不含 node_modules 与构建产物）
+  · Release v1.0.14 附件（ASCII 名，避免中文名被 URL 截断）：
+      dark-forest-1.0.14-win64-setup.exe   104 MB
+      dark-forest-1.0.14-win64.zip         140 MB
+      dark-forest-1.0.14.apk               642 KB
+  · 发布脚本：tools/publish-github.sh <仓库名> <PAT> <说明文件>
 ```
 
 未包含（体积原因）：`node_modules`、`backup/`（历史基线）、`三体黑暗森林卡牌图鉴/`（原始卡牌扫描图，47 MB）。

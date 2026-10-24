@@ -235,6 +235,7 @@ npm run deploy
 | `desktop/` | Windows 桌面版工程（Electron，`sh build-win.sh` 出 exe） |
 | `desktop/dist/黑暗森林-1.0.14-win64-setup.exe` | Windows 安装程序（104 MB，向导安装 + 可卸载） |
 | `desktop/dist/黑暗森林-win64-v1.0.14.zip` | Windows 免安装版（约 140 MB，解压双击 `dark-forest.exe`） |
+| GitHub | https://github.com/tediandeguandian/darkforest-web （源码 + Release 下载页） |
 | `desktop-tauri/` | Windows Tauri 版工程（安装包约 5 MB，在 Windows / CI 上构建，见 `.github/workflows/build-windows.yml`） |
 
 **离线**：WebView 里跑完整的 `shared/rules.js` + `shared/ai.js`，四档人机可用，飞行模式下正常。

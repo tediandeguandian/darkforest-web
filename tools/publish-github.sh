@@ -59,8 +59,11 @@ process.stdout.write(JSON.stringify({
   draft: false,
   prerelease: false,
 }));')
-REL=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
-  "$API/repos/$OWNER/$REPO/releases" -d "$PAYLOAD")
+REL=$(curl -s -H "$AUTH" "$API/repos/$OWNER/$REPO/releases/tags/$TAG")
+if ! printf '%s' "$REL" | grep -q '"id"'; then
+  REL=$(curl -s -X POST -H "$AUTH" -H "Content-Type: application/json" \
+    "$API/repos/$OWNER/$REPO/releases" -d "$PAYLOAD")
+fi
 ID=$(printf '%s' "$REL" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const j=JSON.parse(s);process.stdout.write(String(j.id||''))}catch(e){}})")
 [ -n "$ID" ] || { echo "✗ 建 Release 失败：$REL" >&2; exit 1; }
 
@@ -71,12 +74,13 @@ upload() {
   curl -s -o /dev/null -w "    %{http_code}\n" -X POST \
     -H "$AUTH" -H "Content-Type: application/octet-stream" \
     --data-binary "@$F" \
-    "$API/repos/$OWNER/$REPO/releases/$ID/assets?name=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$LABEL")"
+    "https://uploads.github.com/repos/$OWNER/$REPO/releases/$ID/assets?name=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$LABEL")"
 }
 
-upload "desktop/dist/黑暗森林-$VER-win64-setup.exe" "黑暗森林-$VER-win64-setup.exe"
-upload "desktop/dist/黑暗森林-win64-v$VER.zip" "黑暗森林-win64-v$VER.zip"
-upload "黑暗森林-v$VER.apk" "黑暗森林-v$VER.apk"
+# 附件名一律用 ASCII：中文名经 URL 传参会被 GitHub 截成 "-1.0.14.apk" 这种残缺名
+upload "desktop/dist/黑暗森林-$VER-win64-setup.exe" "dark-forest-$VER-win64-setup.exe"
+upload "desktop/dist/黑暗森林-win64-v$VER.zip"       "dark-forest-$VER-win64.zip"
+upload "黑暗森林-v$VER.apk"                           "dark-forest-$VER.apk"
 
 echo ""
 echo "完成：https://github.com/$OWNER/$REPO/releases/tag/$TAG"
