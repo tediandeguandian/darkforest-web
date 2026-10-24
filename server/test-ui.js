@@ -482,6 +482,41 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   pm5.remove();
   w.applyUiPref({ frost: true, level: 0.45 });
 
+  console.log('=== UI 16. 入口页的 Windows 版下载链接 ===');
+  // 第 9 节设过 window.DF_APP（模拟安卓壳），入口函数会因此整块跳过——先删掉
+  w.Net.view = null; w.Net.room = null;
+  w.eval(`delete window.DF_APP; window.__UI.desktop = null; window.__UI.apk = null;
+    window.fetch = (u) => {
+      if (String(u).indexOf('desktop.json') >= 0) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ title: 'Windows 版', items: [
+          { label: '下载 Windows 版（轻量）', sub: 'v1.0.15 · 1.5 MB', url: 'https://github.com/x/darkforest-web/releases/download/v1.0.15/dark-forest-1.0.15-tauri-setup.exe' },
+          { label: '下载 Windows 版（完整）', sub: 'v1.0.15 · 105 MB', url: 'https://github.com/x/darkforest-web/releases/download/v1.0.15/dark-forest-1.0.15-win64-setup.exe' },
+        ] }) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: '1.0.15', file: 'dark-forest.apk', bytes: 657691, notes: [] }) });
+    };`);
+  show(null, null);
+  await new Promise(r => setTimeout(r, 30));
+  const ds = w.document.querySelector('#desktopSlot');
+  ok(!!ds, '入口页应有 Windows 版下载槽位');
+  const links = w.document.querySelectorAll('#desktopSlot a.apk-get');
+  ok(links.length === 2, '应渲染两条 Windows 下载链接，实际 ' + links.length);
+  const hrefs = [...links].map(a => a.href);
+  ok(hrefs.every(h => /^https:\/\/github\.com\//.test(h)), '链接应指向 GitHub Release，实际 ' + JSON.stringify(hrefs));
+  ok(links[0] && links[0].getAttribute('target') === '_blank', '外链应新窗口打开');
+  ok(/tauri-setup\.exe$/.test(hrefs[0] || ''), '第一条应是轻量版（Tauri）');
+  ok(/win64-setup\.exe$/.test(hrefs[1] || ''), '第二条应是完整版（Electron）');
+  ok(links[0] && /1\.5 MB/.test(links[0].textContent), '轻量版应标出体积：' + (links[0] ? links[0].textContent.trim() : ''));
+  ok(links[0] && /下载 Windows 版/.test(links[0].textContent), '应有可读的按钮文字');
+
+  // 桌面壳里（DF_APP / file://）不给自己挂下载入口
+  w.eval(`window.__UI.desktop = null; window.DF_APP = 1;`);
+  show(null, null);
+  await new Promise(r => setTimeout(r, 30));
+  ok(!w.document.querySelector('#desktopSlot a'), '桌面版/APK 内不该出现 Windows 下载入口');
+  w.eval(`delete window.DF_APP; window.__UI.desktop = null;`);
+  show(null, null);
+
   console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();

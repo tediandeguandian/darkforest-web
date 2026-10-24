@@ -5,12 +5,13 @@ main = "src/index.js"
 workers_dev = true
 compatibility_date = "2025-06-01"
 
-# 自定义域名：只留新地址。
-# 旧地址 shuwang.dpdns.org 已经在 Cloudflare 侧设成 301 → darkforest.dpdns.org，
-# 老版本安装包（1.0.13 及更早里烙的是旧地址）照样能跳到新站，
-# 所以这里**不要**再把 shuwang 绑成 custom domain，否则会盖掉那条重定向。
+# 自定义域名：两个都挂着。
+# ⚠️ 教训：shuwang 这条 custom domain 一旦从 routes 里删掉，Cloudflare 会**连带把它的
+#    DNS 记录一起删掉**，域名直接不解析（502 / No answer）——哪怕你在控制台配了重定向
+#    规则也没用，因为规则要建立在记录存在的前提下。所以旧域名必须一直挂在这里。
 routes = [
   { pattern = "darkforest.dpdns.org", custom_domain = true },
+  { pattern = "shuwang.dpdns.org", custom_domain = true },
 ]
 
 # 静态资源：构建时把 web/ 与 shared/ 组装到 public/

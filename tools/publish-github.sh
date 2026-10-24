@@ -82,5 +82,32 @@ upload "desktop/dist/黑暗森林-$VER-win64-setup.exe" "dark-forest-$VER-win64-
 upload "desktop/dist/黑暗森林-win64-v$VER.zip"       "dark-forest-$VER-win64.zip"
 upload "黑暗森林-v$VER.apk"                           "dark-forest-$VER.apk"
 
+# ---------- 网页的下载入口：Windows 版 ----------
+# 入口页读 web/download/desktop.json（静态文件，随 worker 一起部署）。
+# 在这里重写它，保证链接永远指向刚发布的这个版本——否则发一次版就失效一次。
+REL_BASE="https://github.com/$OWNER/$REPO/releases/download/$TAG"
+node - "$HERE" "$VER" "$REL_BASE" <<'EOF'
+const fs = require('fs');
+const [here, ver, base] = process.argv.slice(2);
+const out = {
+  title: 'Windows 版',
+  items: [
+    {
+      label: '下载 Windows 版（轻量）',
+      sub: 'v' + ver + ' · 1.5 MB · 需 WebView2（缺失时自动装）',
+      url: base + '/dark-forest-' + ver + '-tauri-setup.exe',
+    },
+    {
+      label: '下载 Windows 版（完整）',
+      sub: 'v' + ver + ' · 105 MB · 零依赖，自带浏览器内核',
+      url: base + '/dark-forest-' + ver + '-win64-setup.exe',
+    },
+  ],
+};
+fs.writeFileSync(here + '/web/download/desktop.json', JSON.stringify(out, null, 2) + '\n');
+console.log('· web/download/desktop.json 已更新（指向 ' + ver + '）');
+EOF
+
 echo ""
 echo "完成：https://github.com/$OWNER/$REPO/releases/tag/$TAG"
+echo "别忘了：cd worker && npx wrangler deploy（desktop.json 才能生效）"

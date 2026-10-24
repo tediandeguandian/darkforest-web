@@ -1,0 +1,1183 @@
+<!doctype html><html><head><meta charset="utf-8"><style>@charset "utf-8";
+:root{
+  --bg:#080b11; --bg2:#0d1219; --panel:#111823; --panel2:#17202e; --line:#243040;
+  --txt:#e4eaf3; --dim:#8b99ad; --gold:#e8b64c; --cyan:#5ec8d8;
+  --red:#e05a55; --green:#5fb87a; --purple:#9b7fd4; --blue:#5b8cd8;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+html{background:#0a0714}
+body{
+  margin:0;color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px;line-height:1.6;overflow:hidden;
+}
+
+/* 背景＝图标的延展：Pexels 13396066（Felix Richter，Pexels License，可商用免署名）
+   雾中松林与穿过树隙的月光。
+   ⚠️ 别写成 body{background-image: 渐变, url(...); background-attachment:fixed}——
+   那套在 Chrome 上整层不绘制（实测整页纯色）。改成两个 fixed 伪元素铺底，
+   固定顺序：::before 图 → ::after 遮罩，都在内容之下；画布底色放 html。 */
+body::before,
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;
+}
+body::before{
+  background:#0a0714 url("img/bg-forest.jpg") center 45% / cover no-repeat;
+}
+body::after{
+  background:linear-gradient(180deg,
+    rgba(12,8,22,.90) 0%,
+    rgba(12,8,22,.78) 28%,
+    rgba(12,8,22,.68) 52%,
+    rgba(12,8,22,.64) 76%,
+    rgba(12,8,22,.76) 100%);
+}
+@media (max-aspect-ratio: 5/4){
+  /* 竖屏：把光晕留在偏左上，别让画面正中空掉 */
+  body::before{background-position:42% 40%}
+}
+
+/* ---------- 对局中：换成星空 ----------
+   开局那一屏是"黑暗森林"（松林 + 月光），进了牌桌就抬头看天——
+   换成 Pexels 956981 的银河（Felix Mittermeier）。
+   换图不能直接改 body::before 的 background-image（background-image 不参与过渡），
+   所以在 #app 上再叠一层 fixed 伪元素，靠 opacity 做 0.55s 交叉淡入；
+   它有负 z-index，画在 body 的两层之上、内容之下。 */
+#app::before{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:-1;
+  background:#07060f url("img/bg-space.jpg") center 42% / cover no-repeat;
+  filter:brightness(1.18) saturate(.96);
+  opacity:0;transition:opacity .55s ease;
+}
+body.in-game #app::before{opacity:1}
+/* 牌桌上的遮罩单独一套：中心留空让银河透出来，四周压暗收边。
+   沿用大厅那套均匀遮罩会把星星一并压死（实测整页只剩纯色）。 */
+body.in-game::after{
+  background:
+    radial-gradient(112% 82% at 50% 44%,
+      rgba(8,10,20,0) 0%, rgba(8,10,20,.34) 55%, rgba(8,10,20,.82) 100%),
+    linear-gradient(180deg,
+      rgba(9,7,18,.62) 0%, rgba(9,7,18,.38) 40%,
+      rgba(9,7,18,.44) 70%, rgba(9,7,18,.66) 100%);
+}
+
+@media (max-aspect-ratio: 5/4){
+  /* 竖屏：银河带偏上，别让牌桌正中发花 */
+  #app::before{background-position:48% 34%}
+}
+#app{height:100%;display:flex;flex-direction:column}
+.dim{color:var(--dim)}
+.small{font-size:12px}
+button{font-family:inherit}
+
+/* ---------- 开局 ---------- */
+.setup{max-width:520px;margin:8vh auto;padding:36px;background:var(--panel);border:1px solid var(--line);border-radius:16px;text-align:center}
+.setup h1{font-size:30px;margin:0 0 6px;letter-spacing:6px;color:var(--gold)}
+.setup .sub{color:var(--dim);margin:0 0 28px;font-size:13px;letter-spacing:1px}
+.setup-row{display:flex;align-items:center;gap:14px;margin:18px 0;justify-content:center}
+.setup-row input[type=range]{flex:1;max-width:240px;accent-color:var(--gold)}
+.names{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}
+.name-input{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:9px 12px;color:var(--txt);font-size:14px;outline:none}
+.name-input:focus{border-color:var(--gold)}
+.setup-actions{display:flex;gap:10px;justify-content:center;margin-top:22px}
+.setup .hint{color:var(--dim);font-size:12px;margin-top:20px}
+
+/* ---------- 按钮 ---------- */
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px;transition:.15s}
+.btn:hover{border-color:var(--gold);color:var(--gold)}
+.btn.primary{background:linear-gradient(180deg,#2a3a52,#1d2836);border-color:#3a4d68;color:#fff}
+.btn.primary:hover{border-color:var(--gold);color:var(--gold)}
+.btn.danger{border-color:#5a2e2e;color:#f0a7a4}
+.btn.danger:hover{background:#2a1717;border-color:var(--red)}
+.btn.ghost{background:transparent}
+.btn.small{padding:5px 12px;font-size:12px}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+
+/* ---------- 顶栏 ---------- */
+.topbar{height:54px;display:flex;align-items:center;gap:18px;padding:0 18px;border-bottom:1px solid var(--line);background:rgba(13,18,25,.9);backdrop-filter:blur(8px);flex:0 0 auto}
+.brand{font-size:15px;letter-spacing:3px;color:var(--gold);font-weight:600}
+.tag{font-size:10px;border:1px solid var(--line);border-radius:10px;padding:1px 7px;color:var(--dim);letter-spacing:0;margin-left:4px;vertical-align:2px}
+.turninfo{display:flex;gap:8px;flex:1}
+.chip{font-size:12px;border:1px solid var(--line);border-radius:14px;padding:3px 12px;color:var(--dim);background:var(--panel)}
+.chip.cur{color:var(--gold);border-color:#4a3c1c}
+.chip.stage{color:var(--cyan);border-color:#1e3d44}
+.chip.warn-chip{color:var(--red);border-color:#4a2222}
+.topactions{display:flex;align-items:center;gap:14px}
+.switch{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px;cursor:pointer}
+.switch input{accent-color:var(--gold)}
+
+/* ---------- 布局 ---------- */
+.layout{flex:1;display:grid;grid-template-columns:270px 1fr 320px;gap:14px;padding:14px;min-height:0}
+.col-left,.col-right{display:flex;flex-direction:column;gap:12px;min-height:0;overflow:hidden}
+.col-center{display:flex;flex-direction:column;gap:12px;min-height:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:0}
+.panel-title{font-size:12px;letter-spacing:2px;color:var(--gold);margin-bottom:10px;flex:0 0 auto}
+
+/* ---------- 玩家 ---------- */
+.col-left{overflow-y:auto}
+.player-card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;transition:.2s;position:relative}
+.player-card.current{border-color:var(--gold);box-shadow:0 0 0 1px rgba(232,182,76,.25),0 4px 18px rgba(232,182,76,.08)}
+.player-card.dead{opacity:.38;filter:grayscale(.7)}
+.pc-head{display:flex;justify-content:space-between;align-items:center}
+.pname{font-weight:600;font-size:14px}
+.pc-row{display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:12px;color:var(--dim)}
+.energy{color:var(--cyan);font-family:ui-monospace,monospace}
+.gal{color:var(--dim)}
+.pc-builds,.pc-strikes{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.mini{font-size:10px;border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--dim);background:var(--bg2)}
+.mini.strike{color:#f0a7a4;border-color:#4a2222}
+.badge{font-size:10px;border-radius:4px;padding:1px 6px;background:#2a1a1a;color:#f0a7a4;border:1px solid #4a2222}
+.badge.warn{background:#2a2410;color:var(--gold);border-color:#4a3c1c}
+.badge.dead{background:#1a1a1a;color:#666;border-color:#333}
+
+/* ---------- 星图 ---------- */
+.map-wrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px 6px;flex:1;min-height:280px;display:flex;flex-direction:column;min-height:0}
+.starmap{width:100%;height:100%;flex:1;min-height:0;display:block}
+.edge{stroke:#1e2a3a;stroke-width:1.2}
+.node{cursor:pointer}
+.node-bg{fill:#0f1620;stroke:#2b3a4e;stroke-width:1.5;transition:.18s}
+.node:hover .node-bg{stroke:var(--cyan);fill:#12202b}
+.node.target .node-bg{stroke:var(--gold);fill:#221c0d;stroke-width:2.4;filter:drop-shadow(0 0 8px rgba(232,182,76,.4))}
+.node.occupied .node-bg{stroke:#3f5a7a}
+.node.far{opacity:.28}
+.node-num{fill:var(--txt);font-size:17px;font-weight:700;text-anchor:middle;font-family:ui-monospace,monospace}
+.node-name{fill:var(--dim);font-size:9.5px;text-anchor:middle}
+.node-owner{fill:var(--gold);font-size:11px;text-anchor:middle;paint-order:stroke;stroke:#08251c;stroke-width:3px}
+.marker{stroke:#000;stroke-width:.5}
+.marker.black{fill:#1a1a1a;stroke:#555}
+.marker.purple{fill:var(--purple)}
+.marker.red{fill:var(--red)}
+
+/* ---------- 手牌 ---------- */
+.hand-wrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;flex:0 0 auto;display:flex;flex-direction:column;overflow:hidden}
+.cards{display:flex;gap:10px;overflow-x:auto;overflow-y:hidden;padding:2px 2px 8px;align-items:flex-start}
+.card{flex:0 0 128px;background:linear-gradient(170deg,#16202d,#0e141d);border:1px solid var(--line);border-radius:10px;padding:9px 10px;cursor:pointer;transition:.15s;position:relative}
+.card:hover{transform:translateY(-3px);border-color:#3d5470}
+.card.selected{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 6px 20px rgba(232,182,76,.16);transform:translateY(-4px)}
+.card.unaffordable{opacity:.55}
+.card.broadcast{border-top:2px solid var(--cyan)}
+.card.strike{border-top:2px solid var(--red)}
+.card.build{border-top:2px solid var(--green)}
+.card-top{display:flex;justify-content:space-between;font-size:10px;color:var(--dim)}
+.card-top .cost{color:var(--cyan);font-family:ui-monospace,monospace}
+.card-name{font-size:12.5px;font-weight:600;margin:6px 0 2px;line-height:1.3}
+.card-meta{font-size:10px;color:var(--gold);min-height:14px}
+.card-desc{font-size:10px;color:var(--dim);margin-top:6px;line-height:1.45;max-height:52px;overflow:hidden}
+
+.actions{display:flex;gap:8px;align-items:center;margin-top:10px;flex:0 0 auto;flex-wrap:wrap}
+
+/* ---------- 弃牌堆 ---------- */
+.discard-panel{flex:0 0 auto;max-height:40%;display:flex;flex-direction:column}
+.dzone{margin-bottom:10px;min-height:0}
+.dzone-label{font-size:11px;color:var(--dim);margin-bottom:6px}
+.dzone-label b{color:var(--gold)}
+.dlist{display:flex;flex-wrap:wrap;gap:4px;max-height:76px;overflow-y:auto}
+.dchip{font-size:10.5px;border:1px solid var(--line);border-radius:5px;padding:2px 7px;background:var(--bg2);color:var(--dim);transition:.3s}
+.dchip.arrowed{border-color:var(--gold);color:var(--gold);background:#221c0d}
+
+/* ---------- 日志 ---------- */
+.log-panel{flex:1;display:flex;flex-direction:column;min-height:0}
+.log-list{overflow-y:auto;font-size:11.5px;line-height:1.65;flex:1}
+.logline{padding:3px 0;border-bottom:1px dashed rgba(36,48,64,.4);color:var(--dim)}
+.logline .lt{color:#3f4d61;font-family:ui-monospace,monospace;margin-right:6px;font-size:10px}
+.logline.broadcast{color:#8fd3de}
+.logline.strike{color:#e8a29f}
+.logline.elim{color:var(--red);font-weight:600}
+.logline.marker{color:var(--purple)}
+.logline.build{color:#8fc9a0}
+.logline.system{color:var(--gold)}
+
+/* ---------- 箭头层 ---------- */
+.arrow-layer{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50}
+
+/* ---------- 弹窗 ---------- */
+.modal-mask{position:fixed;inset:0;background:rgba(4,6,10,.78);display:flex;align-items:center;justify-content:center;z-index:100;backdrop-filter:blur(4px)}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px;max-width:520px;width:92%;max-height:86vh;overflow-y:auto;box-shadow:0 24px 80px rgba(0,0,0,.6)}
+.modal.wide{max-width:680px}
+.modal h2{font-size:18px;margin:0 0 8px;color:var(--gold);letter-spacing:1px}
+.modal p{font-size:13px;color:var(--dim);margin:0 0 16px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}
+/* 光速飞船：被打时的生死选择 */
+.esc-modal{max-width:440px;border-color:#6b2b2b;box-shadow:0 0 0 1px rgba(224,85,79,.25),0 28px 90px rgba(0,0,0,.7)}
+.esc-title{color:var(--red)!important}
+.esc-list{margin:0 0 14px;padding-left:18px;font-size:13px;color:var(--txt);line-height:1.8}
+.esc-list b{color:var(--gold)}
+.esc-note{font-size:11.5px!important;color:var(--dim2,#8a8a9a)!important;margin-bottom:18px!important}
+.esc-actions{display:flex;gap:10px}
+.esc-actions .btn{flex:1;text-align:center;padding:11px}
+.esc-actions .btn.primary{background:linear-gradient(180deg,#6d2b2b,#431919);border-color:#8d3b3b;color:#ffe2e0}
+.esc-actions .btn.primary:hover{background:linear-gradient(180deg,#7d3232,#4d1d1d);border-color:#c1443f;color:#fff}
+.resp-row{border:1px solid var(--line);border-radius:9px;padding:10px 12px;margin-bottom:9px;background:var(--bg2)}
+.resp-name{font-size:13px;margin-bottom:8px;display:flex;gap:8px;align-items:center}
+.resp-opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{font-size:11.5px;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:6px;padding:5px 10px;cursor:pointer}
+.opt:hover{border-color:var(--cyan);color:var(--cyan)}
+.opt.on{border-color:var(--gold);color:var(--gold);background:#221c0d}
+.opt.ghost{opacity:.8}
+.choose-row{display:flex;justify-content:space-between;width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:11px 14px;margin-bottom:8px;cursor:pointer;color:var(--txt);font-size:13px}
+.choose-row:hover{border-color:var(--gold);color:var(--gold)}
+
+/* ---------- toast ---------- */
+.toast{position:fixed;left:50%;bottom:36px;transform:translate(-50%,20px);background:#2a1a1a;border:1px solid #5a2e2e;color:#f0c0bd;padding:10px 20px;border-radius:8px;font-size:13px;opacity:0;transition:.25s;z-index:200;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* ---------- 响应式 ---------- */
+@media(max-width:1100px){
+  body{overflow:auto}
+  #app{height:auto;min-height:100%}
+  .layout{grid-template-columns:1fr;height:auto}
+  .col-left,.col-right{overflow:visible}
+  .map-wrap{height:min(60vh,400px)}
+  .hand-wrap{min-height:230px}
+  .discard-panel{max-height:none}
+  .log-list{max-height:200px}
+}
+
+/* ---------- 联机：入口与大厅 ---------- */
+.lobby{position:relative;max-width:460px;margin:9vh auto;padding:34px;background:var(--panel);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 18px 60px rgba(0,0,0,.45)}
+.lobby h1{font-size:26px;margin:0 0 4px;letter-spacing:5px;color:var(--gold);text-align:center}
+.lobby .sub{color:var(--dim);font-size:12px;text-align:center;margin:0 0 26px;letter-spacing:1px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--dim);margin-bottom:6px}
+.field input{width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--txt);font-size:14px;outline:none}
+.field input:focus{border-color:var(--gold)}
+.field input.room{text-transform:uppercase;letter-spacing:6px;text-align:center;font-family:ui-monospace,monospace;font-size:20px}
+.lobby-actions{display:flex;gap:10px;margin-top:20px}
+.lobby-actions .btn{flex:1;text-align:center;padding:11px}
+/* 下载安卓版：入口页底部一行，压得比主按钮暗，别抢「创建房间」的注意力 */
+.apk-get{
+  display:flex;align-items:center;gap:12px;margin-top:20px;padding:10px 12px;
+  border:1px solid var(--line);border-radius:10px;background:var(--bg2);text-decoration:none;
+  transition:border-color .18s,background .18s,transform .18s
+}
+.apk-get:hover{border-color:var(--gold);background:#1b1710;transform:translateY(-1px)}
+.apk-ico{
+  flex:0 0 auto;width:34px;height:34px;border-radius:9px;border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;color:var(--gold);background:var(--panel)
+}
+.apk-txt{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.apk-txt b{font-size:13px;font-weight:700;color:var(--txt);letter-spacing:.5px}
+.apk-txt span{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.apk-arrow{flex:0 0 auto;color:var(--dim);font-size:15px;font-weight:700;transition:color .18s,transform .18s}
+.apk-get:hover .apk-arrow{color:var(--gold);transform:translateY(2px)}
+.divider{display:flex;align-items:center;gap:12px;color:var(--dim);font-size:11px;margin:20px 0}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--line)}
+.roombox{text-align:center;padding:20px 0}
+.roomcode{font-size:34px;letter-spacing:10px;color:var(--gold);font-family:ui-monospace,monospace;margin:6px 0}
+.seatlist{display:flex;flex-direction:column;gap:8px;margin:18px 0}
+.seat{display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:13px}
+.seat .dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:7px}
+.seat .dot.off{background:#555}
+.seat .host{font-size:10px;color:var(--gold);border:1px solid #4a3c1c;border-radius:4px;padding:1px 6px}
+.conn{position:fixed;left:50%;top:14px;transform:translateX(-50%);font-size:12px;padding:6px 16px;border-radius:20px;background:#2a1a1a;border:1px solid #5a2e2e;color:#f0c0bd;z-index:300;display:none}
+.conn.show{display:block}
+.badge-you{font-size:10px;color:var(--cyan);border:1px solid #1e3d44;border-radius:4px;padding:1px 6px;margin-left:6px}
+.waiting{text-align:center;padding:20px;color:var(--dim);font-size:13px}
+.spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* 广播响应：牌面信息 */
+.opt{display:inline-flex;flex-direction:column;align-items:flex-start;line-height:1.35}
+.opt-meta{font-size:10px;color:var(--cyan);opacity:.9;margin-top:2px;letter-spacing:0}
+.lobby-actions #leaveLobby{flex:0 0 auto;padding-left:16px;padding-right:16px}
+
+/* ============================================================
+ * 弃牌堆：带最简说明的卡牌（能量 / 距离 / 打击效果 / 产能与恒星依赖）
+ * 宽屏自动展开完整说明，窄屏点击展开
+ * ============================================================ */
+.discard-panel{max-height:48%}
+.dlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(122px,1fr));gap:5px;max-height:150px;overflow-y:auto;align-content:start}
+.dlist > .dim{grid-column:1/-1}
+.dchip{display:flex;flex-direction:column;gap:1px;min-width:0;font-size:10.5px;
+  border:1px solid var(--line);border-left:3px solid var(--line);border-radius:6px;
+  padding:4px 7px 5px;background:var(--bg2);color:var(--dim);cursor:pointer;transition:.22s}
+.dchip.broadcast{border-left-color:#2e5a66}
+.dchip.strike{border-left-color:#6a2e2e}
+.dchip.build{border-left-color:#2e5238}
+.dc-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.dc-name{color:var(--txt);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dc-cost{color:var(--cyan);font-family:ui-monospace,monospace;font-size:10px;flex:0 0 auto}
+.dc-meta{display:flex;flex-wrap:wrap;gap:1px 5px;font-size:9.5px;line-height:1.45}
+.dc-eff{color:var(--gold);white-space:nowrap}
+.dc-sub{color:#6f7f95;white-space:nowrap}
+.dc-desc{display:none;font-size:10px;color:var(--dim);line-height:1.5;
+  margin-top:4px;padding-top:4px;border-top:1px dashed rgba(36,48,64,.8)}
+.dchip.expanded{grid-column:1/-1;border-color:var(--gold);background:#191512}
+.dchip.expanded .dc-desc{display:block}
+.dchip.arrowed{border-color:var(--gold);background:#221c0d}
+.dchip.arrowed .dc-name{color:var(--gold)}
+
+/* 大屏：直接摊开完整效果描述 */
+@media(min-width:1600px){
+  .dlist{grid-template-columns:repeat(auto-fill,minmax(146px,1fr))}
+  .dc-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .dchip.expanded .dc-desc{-webkit-line-clamp:unset;overflow:visible;display:block}
+}
+/* 单列布局（平板/手机）：牌更宽，说明可读性优先 */
+@media(max-width:1100px){
+  .discard-panel{max-height:none}
+  .dlist{grid-template-columns:repeat(auto-fill,minmax(210px,1fr));max-height:none}
+  .dc-name{font-size:11.5px}
+  .dc-meta,.dc-desc{font-size:10.5px}
+}
+
+/* 不可选择时的红按钮（如被点名后的「不回应」） */
+.opt:disabled{opacity:1}
+.opt.locked{color:var(--red);border-color:#5a2e2e;background:#221414;cursor:not-allowed}
+.opt.locked .opt-meta{color:#c8837f}
+.opt.locked:hover{border-color:var(--red);color:var(--red)}
+
+/* 单列布局下防止横向溢出（手牌横排会把网格撑宽） */
+.layout > section{min-width:0}
+.col-center{min-width:0}
+.cards,.dlist{max-width:100%}
+@media(max-width:1100px){
+  .topbar{flex-wrap:wrap;height:auto;padding:8px 12px;gap:8px}
+  .turninfo{flex-wrap:wrap;order:3;width:100%}
+  .topactions{margin-left:auto}
+  .layout{padding:10px;gap:10px}
+}
+
+/* ---------- 大厅：人机 ---------- */
+.lobby-wide{max-width:560px}
+.seat.ai{border-style:dashed;background:#0f1a22}
+.seat-name{display:flex;align-items:center;gap:6px;min-width:0}
+.seat-right{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.badge.ai{font-size:10px;color:var(--purple);border:1px solid #3a3060;background:#191530;border-radius:4px;padding:1px 6px;margin-left:6px}
+.mini-x{background:transparent;border:1px solid var(--line);color:var(--dim);border-radius:4px;width:20px;height:20px;line-height:1;cursor:pointer;font-size:14px;padding:0}
+.mini-x:hover{border-color:var(--red);color:var(--red)}
+.ai-panel{margin:16px 0 4px;border-top:1px dashed var(--line);padding-top:14px}
+.ai-title{font-size:12px;color:var(--gold);letter-spacing:2px;margin-bottom:10px}
+.ai-levels{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ai-btn{display:flex;flex-direction:column;gap:2px;text-align:left;background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;color:var(--txt);font-family:inherit}
+.ai-btn:hover{border-color:var(--gold)}
+.ai-btn b{font-size:13px;color:var(--gold);letter-spacing:2px}
+.ai-ret{font-size:10px;color:var(--cyan)}
+.ai-blurb{font-size:10px;color:var(--dim);line-height:1.45}
+.ai-btn:disabled{opacity:.35;cursor:not-allowed}
+@media(max-width:520px){.ai-levels{grid-template-columns:1fr}}
+
+/* ============================================================
+ * 平面牌桌（参考斗地主布局，全部纯色块 + 细边，无渐变无投影）
+ * ============================================================ */
+:root{
+  --bg:#16102a;
+  --panel:#221838;
+  --panel2:#2a1e45;
+  --line:#33254f;
+  --txt:#efeaf9;
+  --dim:#9d94b8;
+  --gold:#f2b53c;
+  --cyan:#57c8d8;
+  --red:#e0554f;
+  --green:#5fbf83;
+  --purple:#9b7fd4;
+  --cardface:#fbf8ef;
+  --ink:#1a1820;
+}
+body{background:transparent}   /* 底色交给 html + body::before，别在这里盖不透明色 */
+#app{height:100%;display:flex;flex-direction:column;overflow:hidden}
+
+/* ---------- 顶栏：品牌 + 牌库数 + 操作 ---------- */
+.hud{
+  flex:0 0 auto;height:46px;display:flex;align-items:center;gap:12px;
+  padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line)
+}
+.hud .brand{font-size:13px;letter-spacing:2px;color:var(--gold);font-weight:700;white-space:nowrap}
+.hud .room{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:4px;letter-spacing:1px}
+.counter-bar{flex:1;display:flex;align-items:center;gap:10px;overflow-x:auto;min-width:0;padding:0 4px}
+.cnt-deck{font-size:11px;color:var(--dim);white-space:nowrap}
+.cnt-deck b{color:var(--txt);font-size:13px;margin-left:2px}
+.hud-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+.hud-turn{font-size:11px;color:var(--dim);white-space:nowrap}
+.hbtn{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 12px;font-size:11px;cursor:pointer}
+.hbtn:hover{border-color:var(--gold);color:var(--gold)}
+/* 顶栏里那个小齿轮：和文字按钮同高，但只放图标 */
+.hbtn-icon{display:inline-flex;align-items:center;justify-content:center;padding:4px 6px;line-height:1}
+.hbtn-icon svg{width:15px;height:15px}
+
+/* ---------- 主区：左对手 / 桌面 / 右对手 ---------- */
+.board{flex:1;display:grid;grid-template-columns:184px 1fr 184px;gap:8px;padding:8px;min-height:0}
+.seats{display:flex;flex-direction:column;gap:8px;overflow-y:auto;min-height:0}
+.seat-empty{color:var(--dim);font-size:11px;text-align:center;padding:20px 0}
+.seat-card{
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:9px 9px 8px;display:flex;flex-direction:column;align-items:center;gap:5px;position:relative
+}
+.seat-card.me{border-color:#2f5a63}
+.seat-card.current{border-color:var(--gold)}
+.seat-card.dead{opacity:.45}
+.av{
+  width:44px;height:44px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:700;color:var(--gold);position:relative
+}
+.av.off{color:#6b6383;border-color:#3a3050}
+.av-dot{position:absolute;right:-1px;bottom:-1px;width:10px;height:10px;border-radius:50%;background:var(--gold);border:2px solid var(--panel)}
+.seat-name{font-size:12px;font-weight:600;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seat-stat{display:flex;gap:6px;font-size:10px;color:var(--dim);flex-wrap:wrap;justify-content:center}
+.st-e{color:var(--cyan);font-family:ui-monospace,monospace;font-weight:700}
+.seat-mini{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;max-height:34px;overflow:hidden}
+.seat-out{font-size:10px;color:#c46a66;border:1px solid #5a2b31;border-radius:4px;padding:0 6px}
+.mini{font-size:9.5px;border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--dim);background:var(--panel2);line-height:15px}
+.mini.strike.blind{color:#d9a765;border-color:#4a3a22;border-style:dashed}
+.mini-arrow{color:#e0554f;margin:0 2px;font-weight:800}
+.badge-you{font-size:9px;color:var(--cyan);border:1px solid #26505a;border-radius:3px;padding:0 4px;margin-left:4px}
+
+/* ---------- 桌面 ---------- */
+.arena{display:flex;flex-direction:column;gap:6px;min-height:0;min-width:0;position:relative}
+.arena-top{flex:0 0 auto;display:flex;align-items:center;gap:10px;height:26px;padding:0 2px;font-size:11px}
+.arena-title{color:var(--gold);letter-spacing:3px}
+.target-chip{color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:1px 8px;font-size:11px;display:inline-flex;align-items:center;gap:6px}
+.target-chip.on{color:var(--gold);border-color:#5c4a1e;background:#241d0e}
+.tc-d{color:var(--dim);font-size:10px}
+.tc-x{background:none;border:0;color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:0}
+.tc-x:hover{color:var(--red)}
+.arena-turn{margin-left:auto;color:var(--dim)}
+.arena-turn.mine{color:var(--green)}
+
+.map-wrap{
+  flex:1;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:2px 6px;display:flex;flex-direction:column;overflow:hidden
+}
+.starmap{width:100%;flex:1;min-height:0;display:block}
+.edge{stroke:#2b2145;stroke-width:1.2}
+.node{cursor:pointer}
+.node-bg{fill:#1a1230;stroke:#3b2c5e;stroke-width:1.4;transition:stroke .12s,fill .12s}
+.node:hover .node-bg{stroke:var(--cyan);fill:#1e1636}
+.node.target .node-bg{stroke:var(--gold);fill:#2a2110;stroke-width:2.2}
+.node.occupied .node-bg{stroke:#2f6a72}
+.node.far{opacity:.3}
+.node-num{fill:#efeaf9;font-size:16px;font-weight:700;text-anchor:middle;font-family:ui-monospace,monospace}
+.node-name{fill:#8d84a8;font-size:9px;text-anchor:middle}
+.node-owner{fill:var(--cyan);font-size:9px;text-anchor:middle;font-weight:700}
+.marker{stroke:none}
+.marker.black{fill:#6b6480}
+.marker.purple{fill:var(--purple)}
+.marker.red{fill:var(--red)}
+.node.under-strike .node-bg{stroke:#c1443f;stroke-dasharray:4 3;stroke-width:1.8}
+.strike-tag rect{fill:#c1443f}
+.strike-tag-text{fill:#fff;font-size:8.6px;text-anchor:middle;font-weight:600}
+.strike-tag-more{fill:#e0554f;font-size:9px;text-anchor:middle;font-weight:700}
+
+/* 中央大字 */
+.callout{display:none;flex:0 0 auto;text-align:center;padding:2px 0}
+.callout.show{display:block}
+.co-main{font-size:19px;font-weight:800;letter-spacing:1px;color:var(--gold)}
+.co-sub{font-size:11px;color:var(--dim);margin-top:1px}
+.callout.danger .co-main{color:#ff8f88}
+.callout.reveal .co-main{color:#ff9f6e}
+.callout.reveal .co-sub{color:#b99274}
+.callout.blind .co-main{color:#e0a95c}
+
+/* 弃牌托盘 */
+.tray{
+  flex:0 0 auto;background:var(--panel);border:1px solid var(--line);border-radius:10px;
+  padding:6px 8px;display:flex;flex-direction:column;gap:6px;max-height:172px;overflow-y:auto
+}
+.tray-row{display:flex;align-items:flex-start;gap:8px}
+.tray-label{font-size:9.5px;color:var(--dim);white-space:nowrap;padding-top:5px;min-width:76px;line-height:1.5}
+.tray-label b{color:var(--gold)}
+.tray .dlist{display:flex;flex-wrap:wrap;gap:8px 10px;max-height:none;overflow:visible;flex:1;align-content:flex-start}
+.tray-row.last{opacity:.75}
+.tray .dchip{min-width:104px}
+.dchip{
+  display:flex;flex-direction:column;gap:1px;min-width:0;font-size:10px;cursor:pointer;
+  border:1px solid var(--line);border-left:3px solid var(--line);border-radius:5px;
+  padding:3px 6px 4px;background:var(--panel2);color:var(--dim);transition:border-color .15s
+}
+.dchip.broadcast{border-left-color:#2f7a86}
+.dchip.strike{border-left-color:#8e3c39}
+.dchip.build{border-left-color:#3f7a53}
+.dc-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.dc-name{color:var(--txt);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dc-cost{color:var(--cyan);font-family:ui-monospace,monospace;font-size:9.5px;flex:0 0 auto}
+.dc-meta{display:flex;flex-wrap:wrap;gap:1px 5px;font-size:9px;line-height:1.35}
+.dc-eff{color:var(--gold);white-space:nowrap}
+.dc-sub{color:#7d7593;white-space:nowrap}
+.dc-dest{color:#e0a95c;white-space:nowrap}
+.dc-desc{display:none;font-size:9.5px;color:var(--dim);line-height:1.45;margin-top:3px;padding-top:3px;border-top:1px solid var(--line)}
+.dchip.expanded{flex:1 1 100%;border-color:var(--gold)}
+.dchip.expanded .dc-desc{display:block}
+.dchip.arrowed{border-color:var(--gold);background:#241d0e}
+.dchip.arrowed .dc-name{color:var(--gold)}
+
+/* 按钮组 */
+.action-bar{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:14px;padding:6px 0 2px;min-height:52px}
+.action-bar .hint{font-size:12px;color:var(--dim)}
+.pill{
+  height:42px;min-width:104px;padding:0 22px;border-radius:21px;border:1px solid transparent;
+  font-size:15px;font-weight:800;letter-spacing:2px;cursor:pointer;color:#fff
+}
+.pill.pass{background:#3b6fd4}
+.pill.hint{background:#2f8f9d}
+.pill.play{background:#e8912c}
+.pill.play:disabled{background:#3a3152;color:#6f6788;cursor:not-allowed}
+.pill:hover:not(:disabled){filter:brightness(1.1)}
+.pill.mini{height:34px;min-width:0;padding:0 14px;font-size:12px;letter-spacing:0;border-radius:17px}
+.pill.danger{background:#7a2f2c;border-color:#a34a45}
+
+/* ---------- 我的区域 ---------- */
+.mybar{
+  flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line);
+  padding:6px 12px 10px;display:flex;flex-direction:column;gap:4px
+}
+.my-line{display:flex;align-items:center;justify-content:space-between;gap:12px;height:26px}
+.me-chip{display:flex;align-items:center;gap:8px;font-size:11px}
+.me-av{width:22px;height:22px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--gold)}
+.me-name{font-weight:700;color:var(--gold)}
+.me-energy{color:var(--cyan);font-family:ui-monospace,monospace;font-weight:700}
+.me-gal{color:var(--dim)}
+.me-builds{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:64%}
+.hand{display:flex;justify-content:center;align-items:flex-end;gap:0;padding:6px 0 0;min-height:146px;overflow-x:auto}
+.hand .pcard + .pcard{margin-left:-6px}
+
+/* 牌面：平面白卡 */
+.pcard{
+  position:relative;flex:0 0 auto;width:108px;height:144px;display:flex;flex-direction:column;
+  padding:7px 9px 8px;border-radius:8px;cursor:pointer;
+  background:var(--cardface);border:1px solid #d9d2c2;color:var(--ink);
+  transition:transform .12s,border-color .12s
+}
+.pcard.broadcast{border-top:3px solid #2f8f9d}
+.pcard.strike{border-top:3px solid #c1443f}
+.pcard.build{border-top:3px solid #3f8a55}
+.pcard:hover{transform:translateY(-10px);z-index:99!important}
+.pcard.selected{transform:translateY(-16px);border-color:var(--gold);box-shadow:inset 0 0 0 2px var(--gold);z-index:98!important}
+.pcard.poor{opacity:.55}
+/* 光速飞船：留着保命，不能主动打出 */
+.pcard.reserved{border-top:3px solid #d8a53a;background-image:linear-gradient(180deg,rgba(216,165,58,.10),transparent 45%)}
+.pcard.reserved .pc-type{color:#d8a53a}
+.pcard.reserved::after{content:'仅挨打时';position:absolute;right:6px;bottom:6px;font-size:9px;letter-spacing:.5px;color:#d8a53a;opacity:.85}
+.pc-glyph{position:absolute;right:5px;bottom:26px;font-size:40px;font-weight:900;line-height:1;color:rgba(20,20,40,.06);pointer-events:none}
+.pc-top{display:flex;justify-content:space-between;align-items:flex-start;position:relative;z-index:1}
+.pc-cost{color:#a3621a;font-family:ui-monospace,monospace;font-weight:800;font-size:14px;line-height:1}
+.pc-type{color:#8a8574;letter-spacing:1px;font-size:9.5px;margin-top:2px}
+.pc-name{font-size:13.5px;font-weight:800;margin:7px 0 3px;line-height:1.25;color:#171613;position:relative;z-index:1}
+.pc-facts{display:flex;flex-direction:column;gap:1px;font-size:10px;line-height:1.35;position:relative;z-index:1}
+.pc-main{color:#8a5a10;font-weight:700}
+.pc-sub{color:#7d7666}
+
+/* ---------- 战报抽屉 ---------- */
+.log-drawer{
+  position:fixed;top:46px;right:0;width:320px;max-width:86vw;height:calc(100% - 46px);
+  background:var(--panel);border-left:1px solid var(--line);
+  transform:translateX(102%);transition:transform .18s;z-index:120;display:flex;flex-direction:column
+}
+.log-drawer.open{transform:none}
+.log-head{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;font-size:12px;letter-spacing:2px;color:var(--gold);border-bottom:1px solid var(--line)}
+.log-list{flex:1;overflow-y:auto;padding:8px 12px;font-size:11px}
+.mini-x{background:none;border:1px solid var(--line);color:var(--dim);border-radius:4px;width:20px;height:20px;line-height:1;cursor:pointer;font-size:13px;padding:0}
+.mini-x:hover{border-color:var(--red);color:var(--red)}
+
+/* ---------- 弹窗（沿用，改成平面配色） ---------- */
+.modal-mask{background:rgba(10,6,20,.72)}
+.modal{background:var(--panel);border:1px solid var(--line);box-shadow:none}
+.modal h2{color:var(--gold)}
+
+/* ---------- 窄屏 ---------- */
+@media(max-width:1100px){
+  #app{height:auto;min-height:100%;overflow:auto}
+  .hud{flex-wrap:wrap;height:auto;padding:6px 10px;gap:6px}
+  .counter-bar{order:3;flex:1 0 100%;width:auto;padding:2px 0}
+  .board{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:auto 1fr;padding:6px;gap:6px}
+  #seatsLeft{grid-column:1;grid-row:1}
+  #seatsRight{grid-column:2;grid-row:1}
+  .arena{grid-column:1/-1;grid-row:2}
+  .seats{flex-direction:row;overflow-x:auto;gap:6px;flex:0 0 auto}
+  .seat-card{min-width:112px;padding:6px}
+  .av{width:34px;height:34px;font-size:14px}
+  .arena{gap:4px}
+  .map-wrap{height:270px;flex:0 0 auto}
+  .tray{max-height:none}
+  .tray-row{flex-direction:column;gap:3px}
+  .tray-label{min-width:0;padding-top:0}
+  .action-bar{flex-wrap:wrap;gap:8px;min-height:0}
+  .pill{height:38px;min-width:88px;padding:0 16px;font-size:14px}
+  .hand{justify-content:flex-start;min-height:132px;padding:10px 4px 4px}
+  .pcard{width:88px;height:126px;padding:7px 8px}
+  .hand .pcard + .pcard{margin-left:-8px}
+  .pc-name{font-size:11.5px}
+  .pc-facts{font-size:9px}
+  .pc-name{font-size:12px}
+  .my-line{height:auto;flex-wrap:wrap;gap:6px}
+  .me-builds{max-width:100%}
+}
+
+/* ---------- 大厅：标题居中 + 左右两栏 ---------- */
+.lobby.lobby-room{
+  max-width:900px;width:94%;margin:4vh auto;padding:20px 24px;
+  max-height:92vh;overflow:auto
+}
+.lobby-head{text-align:center;margin-bottom:16px}
+.lobby-head h1{font-size:24px;letter-spacing:6px;margin:0 0 4px}
+.lobby-head .sub{margin:0 0 8px;font-size:12px}
+.lobby-room .roomcode{font-size:30px;letter-spacing:8px;margin:2px 0 4px;color:var(--gold);font-family:ui-monospace,monospace}
+.lobby-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:22px;align-items:start}
+.lobby-col{min-width:0}
+.lobby-col .col-title{
+  display:flex;justify-content:space-between;align-items:baseline;
+  font-size:11px;letter-spacing:2px;color:var(--gold);margin-bottom:8px
+}
+.lobby-col .col-title span{color:var(--dim);letter-spacing:0;font-size:10px}
+.lobby-col .seatlist{margin:0;max-height:min(46vh,360px);overflow-y:auto;padding-right:4px}
+
+/* 对局规则：标准 / 快速 */
+.mode-pick{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.mode-btn{text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;cursor:pointer;color:var(--txt);transition:.15s}
+.mode-btn b{display:block;font-size:12.5px;margin-bottom:3px;letter-spacing:.5px}
+.mode-btn span{display:block;font-size:10.5px;color:var(--dim);line-height:1.55}
+.mode-btn:hover:not(:disabled){border-color:var(--gold)}
+.mode-btn.on{border-color:var(--gold);background:#221c0d}
+.mode-btn.on b{color:var(--gold)}
+.mode-btn:disabled{cursor:default;opacity:.75}
+
+/* 对局中右上角的规则标签 */
+.mode-chip{font-size:10.5px;padding:2px 8px;border-radius:20px;border:1px solid var(--line);
+  color:var(--dim);letter-spacing:.5px;white-space:nowrap}
+.mode-chip.blind{border-color:#5a2b31;color:#e08f4f;background:rgba(224,90,85,.10)}
+.lobby-col .ai-panel{margin:0;border-top:0;padding-top:0}
+.lobby-room .lobby-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.lobby-room .lobby-actions .btn{flex:1 1 auto;padding:10px 12px}
+.lobby-room #leaveLobby{flex:0 0 auto}
+.lobby-room #startBtn{
+  background:var(--gold);border:1px solid var(--gold);color:#1d1408;font-weight:800;letter-spacing:1px
+}
+.lobby-room #startBtn:hover:not(:disabled){filter:brightness(1.06);color:#1d1408}
+.lobby-room #startBtn:disabled{background:var(--panel2);border-color:var(--line);color:var(--dim);filter:none}
+@media (max-width:820px), (orientation:portrait){
+  .lobby.lobby-room{margin:2vh auto;width:96%;padding:16px;max-height:none}
+  .lobby-grid{grid-template-columns:1fr;gap:14px}
+  .lobby-head h1{font-size:20px;letter-spacing:4px}
+  .lobby-room .roomcode{font-size:26px;letter-spacing:6px}
+  .lobby-col .seatlist{max-height:none}
+}
+
+/* 广播倒计时 */
+.resp-timer{
+  margin-top:14px;text-align:center;font-size:12px;color:var(--dim);
+  font-family:ui-monospace,monospace;letter-spacing:1px;
+  border-top:1px solid var(--line);padding-top:10px
+}
+.resp-timer.urgent{color:var(--red);font-weight:700}
+
+/* ---------- 能量飘字：+N / −N，约 3 秒可见后淡出 ---------- */
+.float-layer{position:fixed;inset:0;pointer-events:none;z-index:190;overflow:hidden}
+.e-float{
+  position:absolute;transform:translate(-50%,0);
+  font-family:ui-monospace,monospace;font-weight:800;font-size:13.5px;line-height:1;
+  padding:3px 8px;border-radius:9px;white-space:nowrap;
+  animation:e-float 3.6s cubic-bezier(.16,.84,.3,1) forwards;
+  will-change:transform,opacity
+}
+.e-float.gain{color:#06181c;background:var(--cyan)}
+.e-float.loss{color:#fff;background:var(--red)}
+@keyframes e-float{
+  0%{opacity:0;transform:translate(-50%,7px) scale(.86)}
+  10%{opacity:1;transform:translate(-50%,0) scale(1)}
+  80%{opacity:1;transform:translate(-50%,-12px) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-26px) scale(.96)}
+}
+
+/* ============================================================
+ * 弃牌堆：同批堆叠（每张不同外框），最新一摞黄框，更早的灰字
+ * ============================================================ */
+.dlist{display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start}
+.dstack{display:flex;align-items:flex-start}
+.dstack > .dchip{position:relative}
+.dstack.multi > .dchip{
+  border-color:var(--ring);
+  border-left:3px solid var(--ring);
+  border-right:3px solid var(--ring);
+}
+/* 最新一摞：黄色外框 */
+.dstack.fresh > .dchip{
+  border-color:var(--gold);
+  border-left:3px solid var(--gold);
+  border-right:3px solid var(--gold);
+  background:#241d0e;
+}
+.dstack.fresh.multi > .dchip{
+  border-color:var(--ring);
+  border-left:3px solid var(--ring);
+  border-right:3px solid var(--ring);
+  outline:1px solid var(--gold);
+  outline-offset:1px;
+  background:#241d0e;
+}
+.dstack.fresh > .dchip .dc-name{color:var(--gold)}
+.dstack.fresh > .dchip .dc-eff{color:#e8c274}
+/* 更早的摞：灰字 */
+.dstack.old > .dchip .dc-name{color:#6d6580}
+.dstack.old > .dchip .dc-eff{color:#5f586f}
+.dstack.old > .dchip .dc-sub{color:#575066}
+.dstack.old > .dchip .dc-cost{color:#5d6d75}
+.dstack.old > .dchip{opacity:.82}
+/* 来源角标 */
+.dc-tag{
+  position:absolute;top:-7px;right:4px;font-size:8px;line-height:1.4;
+  padding:0 4px;border-radius:3px;letter-spacing:.5px;
+  background:var(--panel);border:1px solid var(--line);color:var(--dim)
+}
+.dchip.tag-response .dc-tag{color:#0d1a12;background:var(--cyan);border-color:var(--cyan)}
+.dchip.tag-cast .dc-tag{color:#221a06;background:var(--gold);border-color:var(--gold)}
+.dchip.tag-rejected .dc-tag{color:#c8837f;border-color:#5a2e2e}
+/* 展开时浮到最上，压住整摞 */
+.dchip.expanded{z-index:300!important;margin-left:0!important;flex:0 0 auto}
+
+/* 人机思考中 */
+.arena-turn.thinking{color:var(--gold)}
+.dots{display:inline-flex;gap:2px;margin-right:5px;vertical-align:middle}
+.dots b{width:4px;height:4px;border-radius:50%;background:var(--gold);display:block;animation:dotPulse 1.1s infinite}
+.dots b:nth-child(2){animation-delay:.16s}
+.dots b:nth-child(3){animation-delay:.32s}
+@keyframes dotPulse{0%,60%,100%{opacity:.25}30%{opacity:1}}
+
+/* 堆叠卡片：最新一摞加一圈金边，更早的压暗 */
+.dstack.fresh > .dchip{box-shadow:0 0 0 1px var(--gold)}
+.dstack.fresh.multi > .dchip{box-shadow:none}
+.dstack.multi > .dchip + .dchip{opacity:.94}
+.dchip{padding:4px 7px 5px}
+.dc-meta{font-size:8.8px}
+
+/* 堆叠：被压住的牌只露"书脊"（彩色外框），文字全部隐藏 */
+.dstack{position:relative}
+.dstack.multi > .dchip:not(:first-child){background:#241c3a}
+.dstack.multi > .dchip:not(:first-child) .dc-top,
+.dstack.multi > .dchip:not(:first-child) .dc-meta,
+.dstack.multi > .dchip:not(:first-child) .dc-desc,
+.dstack.multi > .dchip:not(:first-child) .dc-tag{display:none}
+.dstack.multi > .dchip:not(:first-child) .dc-name{
+  display:flex;align-items:center;height:100%;
+  font-size:10px;color:#cfc7e2;letter-spacing:0;
+  padding:0 2px;white-space:normal;line-height:1.2;word-break:break-all
+}
+/* 摞数徽章 */
+.dstack.multi::after{
+  content:'×' attr(data-count);
+  position:absolute;right:-4px;top:-7px;z-index:400;
+  font-size:9px;font-family:ui-monospace,monospace;font-weight:700;
+  color:#221a06;background:var(--gold);border-radius:7px;padding:0 5px;line-height:14px
+}
+.dstack.old.multi::after{background:#5b5470;color:#e6e0f4}
+
+/* 叠牌定稿：第一张完整，其余收成彩色窄条（不同外框色），绝不重叠文字 */
+.dstack.multi{display:flex;align-items:flex-start;gap:3px}
+.dstack.multi > .dchip.spine{
+  width:15px!important;min-width:15px!important;max-width:15px!important;
+  padding:0!important;overflow:hidden;
+  background:var(--ring)!important;
+  border:1px solid var(--ring)!important;border-radius:3px;
+  height:100%;min-height:38px;cursor:default
+}
+.dstack.multi > .dchip.spine > *{display:none!important}
+.dstack.multi > .dchip.spine:hover{filter:brightness(1.25)}
+
+/* 弃牌卡：给足高度，别把三行文字挤在一起 */
+.tray{max-height:158px}
+.tray .dchip{min-height:54px}
+.tray .dchip.spine{min-height:54px}
+.tray{max-height:182px}
+.tray .dchip{min-height:62px}
+.tray .dchip.spine{min-height:62px}
+.dc-name{font-size:10.5px;line-height:1.3}
+.dc-meta{font-size:8.6px;line-height:1.45}
+/* 弃牌卡最终尺寸：略宽一点，效果说明允许折行 */
+.tray .dchip{min-width:118px;min-height:66px;overflow:hidden}
+.tray .dchip.spine{min-width:15px!important;min-height:66px}
+.dc-sub{white-space:normal}
+.dc-meta{gap:0 5px}
+/* 来源标签挪到左上，避免和摞数徽章打架 */
+.dc-tag{left:4px;right:auto}
+.dstack.multi::after{right:-6px;top:-9px}
+
+/* ============================================================
+ * 弃牌区定稿：卡片尺寸固定、信息完整；点击展开整摞
+ * ============================================================ */
+.tray{max-height:206px}
+.tray .dchip{
+  width:132px;min-width:132px;max-width:132px;
+  height:78px;min-height:78px;max-height:78px;
+  padding:5px 7px 6px;overflow:hidden
+}
+.tray .dchip.spine{
+  width:14px!important;min-width:14px!important;max-width:14px!important;
+  height:78px;min-height:78px;background:var(--ring)!important;
+  border:1px solid var(--ring)!important
+}
+.dchip .dc-name{font-size:11px;line-height:1.25}
+.dchip .dc-meta{font-size:8.6px;line-height:1.4;overflow:hidden}
+.dchip .dc-eff{white-space:normal}
+.dstack{cursor:pointer}
+.dstack:hover > .dchip:first-child{border-color:var(--cyan)}
+
+/* 展开层 */
+.stack-modal-mask{
+  position:fixed;inset:0;z-index:260;background:rgba(8,5,16,.72);
+  display:flex;align-items:center;justify-content:center;padding:24px
+}
+.stack-modal{
+  background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  width:min(760px,94vw);max-height:80vh;display:flex;flex-direction:column;overflow:hidden
+}
+.sm-head{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 14px;border-bottom:1px solid var(--line);
+  font-size:12px;color:var(--dim);letter-spacing:1px
+}
+.sm-head b{color:var(--gold)}
+.sm-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));
+  gap:10px;padding:14px;overflow-y:auto
+}
+.sm-card{
+  position:relative;display:flex;flex-direction:column;gap:4px;
+  background:var(--cardface);color:var(--ink);border-radius:8px;
+  border:1px solid #d9d2c2;border-top:3px solid #3f8a55;
+  padding:8px 9px 9px;min-height:132px
+}
+.sm-card.broadcast{border-top-color:#2f8f9d}
+.sm-card.strike{border-top-color:#c1443f}
+.sm-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
+.sm-name{font-size:13px;font-weight:800;line-height:1.25}
+.sm-cost{font-family:ui-monospace,monospace;font-weight:800;color:#a3621a;font-size:12px}
+.sm-facts{display:flex;flex-direction:column;gap:1px;font-size:10px;color:#8a5a10;font-weight:700}
+.sm-dest{color:#e0a95c}
+.sm-facts span+span{color:#7d7666;font-weight:400}
+.sm-desc{margin-top:auto;font-size:9.5px;color:#8c8574;line-height:1.45}
+.dc-tag.on{position:absolute;top:-1px;left:6px;font-size:8px;padding:0 4px;border-radius:0 0 3px 3px;
+  background:var(--cyan);color:#0d1a12}
+
+/* 装备卡：名称 + 一句效果 */
+.eq{
+  display:inline-flex;align-items:center;gap:5px;
+  background:var(--panel2);border:1px solid var(--line);border-left:3px solid #3f8a55;
+  border-radius:5px;padding:1px 7px;font-size:10px;max-width:100%
+}
+.eq b{color:var(--txt);font-weight:600;white-space:nowrap}
+.eq i{font-style:normal;color:var(--dim);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.me-builds{max-width:66%;gap:5px}
+
+/* 换人提示 */
+.turn-gate{position:fixed;inset:0;z-index:250;display:flex;align-items:flex-start;justify-content:center;pointer-events:none}
+.turn-gate .tg-card{
+  margin-top:88px;background:rgba(20,14,36,.92);border:1px solid var(--line);
+  border-radius:12px;padding:14px 30px;text-align:center;
+  animation:tgIn .3s ease-out
+}
+.turn-gate .tg-name{font-size:19px;font-weight:800;letter-spacing:2px;color:var(--gold)}
+.turn-gate .tg-sub{font-size:11px;color:var(--dim);margin-top:3px}
+.turn-gate.mine{pointer-events:auto;background:rgba(8,5,16,.55)}
+.turn-gate.mine .tg-card{
+  margin-top:0;align-self:center;padding:26px 46px;
+  border-color:var(--gold);box-shadow:0 0 0 1px rgba(242,181,60,.25)
+}
+.turn-gate.mine .tg-name{font-size:24px;letter-spacing:4px}
+@keyframes tgIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+
+/* 弃置按钮：不可用时置灰（含 danger 变体） */
+.pill.danger:disabled,
+.pill.mini:disabled{
+  background:#332c46!important;border-color:var(--line)!important;
+  color:#6b6380!important;cursor:not-allowed;filter:none!important
+}
+.pill:disabled:hover{filter:none!important}
+/* 展开卡上的来源标签放到卡片外侧，别压住牌名 */
+.dc-tag.on{top:-8px;left:8px;border-radius:3px;z-index:2}
+
+/* 修复：展开层必须盖住托盘里的 ×N 徽章 */
+.dstack.multi::after{z-index:2}
+.stack-modal-mask{z-index:400;background:rgba(8,5,16,.9)}
+.sm-card{min-height:146px}
+
+/* 所有主按钮的不可用态统一置灰 */
+.pill:disabled{
+  background:#332c46!important;border-color:var(--line)!important;
+  color:#6b6380!important;cursor:not-allowed;filter:none!important;box-shadow:none!important
+}
+
+/* ============================================================
+ * 房间设置入口 / 折叠菜单 / 更新提示
+ * ============================================================ */
+.lobby-room{position:relative}
+.icon-btn{
+  position:absolute;top:14px;right:14px;width:34px;height:34px;border-radius:9px;
+  border:1px solid var(--line);background:rgba(13,18,26,.62);color:var(--dim);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;transition:.16s
+}
+.icon-btn:hover{color:var(--gold);border-color:#4a3d1c;transform:rotate(20deg)}
+
+.rule-line{display:flex;align-items:center;justify-content:center;gap:7px;font-size:11.5px;color:var(--dim);margin:16px 0 2px}
+.rule-line i{opacity:.45;font-style:normal}
+.rule-edit{background:none;border:0;color:var(--gold);font-size:11px;cursor:pointer;padding:0 2px;text-decoration:underline;text-underline-offset:3px;font-family:inherit}
+.rule-edit:hover{color:#ffd27a}
+
+.fold{border:1px solid var(--line);border-radius:10px;background:rgba(13,18,26,.5);margin-bottom:4px}
+.fold summary{
+  cursor:pointer;font-size:12px;color:var(--txt);padding:11px 12px;list-style:none;
+  display:flex;align-items:center;gap:8px
+}
+.fold summary::-webkit-details-marker{display:none}
+.fold summary::after{content:'›';margin-left:auto;color:var(--dim);transform:rotate(90deg);transition:.18s;font-size:15px;line-height:1}
+.fold[open] summary::after{transform:rotate(-90deg)}
+.fold summary span{color:var(--dim);font-size:10px}
+.fold[open] summary{border-bottom:1px solid var(--line)}
+.fold .ai-levels{padding:10px 12px 12px}
+
+.settings-mask{
+  position:fixed;inset:0;background:rgba(4,6,10,.62);display:flex;align-items:center;justify-content:center;
+  z-index:600;padding:20px;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)
+}
+.settings{
+  width:min(420px,100%);background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.55)
+}
+.set-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;color:var(--gold);letter-spacing:2px;font-size:13px}
+.set-group{margin-top:14px}
+.set-label{font-size:11px;color:var(--dim);margin-bottom:8px;letter-spacing:2px}
+.set-opts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.set-opt{text-align:left;background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:9px 11px;color:var(--txt);cursor:pointer;font-family:inherit;transition:.15s}
+.set-opt b{display:block;font-size:12.5px;margin-bottom:2px}
+.set-opt span{display:block;font-size:10px;color:var(--dim);line-height:1.45}
+.set-opt:hover:not(:disabled){border-color:#4a3d1c}
+.set-opt.on{border-color:var(--gold);background:#221c0d}
+.set-opt.on b{color:var(--gold)}
+.set-opt:disabled{cursor:default;opacity:.65}
+.set-foot{margin-top:14px;font-size:10px;color:var(--dim);text-align:center}
+
+#updateBadge{
+  position:fixed;top:10px;right:10px;z-index:700;display:flex;align-items:center;gap:6px;
+  background:#241d0e;border:1px solid #5c4a1e;color:var(--gold);font-size:10.5px;
+  padding:4px 10px;border-radius:20px;cursor:pointer;font-family:inherit
+}
+.ub-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px rgba(232,182,76,.16)}
+#updateBadge:disabled{cursor:default;opacity:.7}
+#updateBadge:active{transform:scale(.97)}
+
+/* ============================================================
+ * 应用内对话框（替代 alert / confirm）
+ * ============================================================ */
+.dlg-mask{
+  position:fixed;inset:0;z-index:800;background:rgba(8,5,16,.66);
+  display:flex;align-items:center;justify-content:center;padding:20px;
+  backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)
+}
+.dlg{
+  width:min(400px,100%);background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.55)
+}
+.dlg-head{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:12px 16px;border-bottom:1px solid var(--line);
+  font-size:13px;letter-spacing:1px;color:var(--gold)
+}
+.dlg-body{padding:16px}
+.dlg-foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 14px;border-top:1px solid var(--line)}
+.dlg-foot .btn{padding:8px 16px}
+.dlg .btn.danger{background:#3a1c1c;border-color:#7a2f2c;color:#f4b3b0}
+.dlg .btn.danger:hover{background:#48211f;border-color:var(--red);color:#fff}
+.dlg-ver{display:flex;align-items:baseline;gap:10px}
+.dlg-ver span{font-size:24px;font-weight:800;color:var(--gold);font-family:ui-monospace,monospace;letter-spacing:1px}
+.dlg-ver i{font-style:normal;font-size:11px;color:var(--dim)}
+.dlg-note{margin:10px 0 0;font-size:11.5px;color:var(--dim);line-height:1.65}
+.dlg-sub{margin:14px 0 6px;font-size:10px;letter-spacing:2px;color:var(--dim)}
+.dlg-verline{
+  margin:10px 0 2px;font-size:10.5px;color:var(--gold);font-family:ui-monospace,monospace;
+  letter-spacing:1px;opacity:.85
+}
+.dlg-verline:first-of-type{margin-top:6px}
+.dlg-list{margin:0;padding-left:15px;max-height:34vh;overflow:auto}
+.dlg-list li{font-size:11.5px;color:var(--txt);line-height:1.75;margin:2px 0}
+.dlg-list li::marker{color:var(--gold)}
+.dlg-note b{color:var(--txt)}
+
+/* ============================================================
+ * 毛玻璃（默认开；入口页的齿轮里可关 / 调浓度）
+ * 做法：体面的面板颜色本来是实色 var(--panel)，这里在 body.frost 下换成
+ * 半透明 rgba，再给几块大面板加 backdrop-filter。浓度不写死——
+ * JS 按滑块把 --frost-a（透明度）和 --frost-blur（模糊半径）写到 body 上。
+ * 双层一起调，才能做到"淡淡的雾"和"厚一点的磨砂"都好看。
+ * ============================================================ */
+body.frost{
+  --panel:rgba(28,20,48,var(--frost-a,.76));
+  --panel2:rgba(36,26,62,calc(var(--frost-a,.76) + .10));
+  --bg2:rgba(20,15,40,calc(var(--frost-a,.76) + .08));
+}
+body.frost .hud,
+body.frost .seat-card,
+body.frost .map-wrap,
+body.frost .tray,
+body.frost .mybar,
+body.frost .log-drawer,
+body.frost .lobby,
+body.frost .settings,
+body.frost .stack-modal,
+body.frost .dlg,
+body.frost .modal{
+  -webkit-backdrop-filter:blur(var(--frost-blur,12px)) saturate(1.06);
+  backdrop-filter:blur(var(--frost-blur,12px)) saturate(1.06);
+}
+
+/* 设置：名字 / 开关 / 滑杆 */
+.pref-name{display:flex;gap:8px}
+.pref-name input{
+  flex:1;min-width:0;background:var(--bg2);border:1px solid var(--line);border-radius:8px;
+  padding:8px 10px;color:var(--txt);font-size:13px;outline:none;font-family:inherit
+}
+.pref-name input:focus{border-color:#4a3d1c}
+.pref-name .btn{padding:8px 14px;flex:0 0 auto}
+.switch{
+  position:relative;width:44px;height:24px;border-radius:20px;border:1px solid #3a3350;
+  background:#191228;cursor:pointer;flex:0 0 auto;transition:.18s;padding:0
+}
+.switch::after{
+  content:'';position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+  background:#7a7192;transition:.18s
+}
+.switch.on{border-color:#7a5f1c;background:#3a2f12}
+.switch.on::after{left:23px;background:var(--gold)}
+.pref-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.pref-row + .pref-row{margin-bottom:8px}
+.pr-txt{font-size:12.5px;color:var(--txt);line-height:1.35}
+.pr-txt span{display:block;font-size:10px;color:var(--dim);margin-top:2px}
+.range-wrap{display:flex;align-items:center;gap:10px}
+.range-wrap input[type=range]{
+  -webkit-appearance:none;appearance:none;flex:1;height:3px;border-radius:3px;
+  background:var(--line);outline:none;min-width:0
+}
+.range-wrap input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--gold);
+  border:0;cursor:pointer
+}
+.range-wrap input[type=range]::-moz-range-thumb{
+  width:16px;height:16px;border-radius:50%;background:var(--gold);border:0;cursor:pointer
+}
+.range-wrap input[type=range]:disabled{opacity:.35}
+.pref-val{font-size:11px;color:var(--gold);font-family:ui-monospace,monospace;min-width:40px;text-align:right}
+
+/* ============================================================
+ * 对手详情弹窗（点座位卡）
+ * ============================================================ */
+.seat-card.clickable{cursor:pointer;transition:border-color .15s,transform .15s}
+.seat-card.clickable:hover{border-color:#3d5473;transform:translateY(-1px)}
+.seat-card.clickable:active{transform:translateY(0)}
+
+.stack-modal-mask.pm-mask{background:rgba(8,5,16,.66);backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.player-modal{width:min(620px,94vw)}
+/* 对手的建筑牌比弃牌堆那张大一号：看清效果说明是这个弹窗的全部意义 */
+.pm-builds .sm-facts{font-size:10.5px}
+.pm-builds .sm-desc{font-size:10px;line-height:1.5}
+.pm-top{display:flex;align-items:center;gap:12px;padding:14px 16px 0}
+.pm-av{
+  flex:0 0 auto;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:18px;font-weight:800;color:var(--gold);background:#1b1710;border:1px solid #4a3d1c
+}
+.pm-av.off{color:var(--dim);background:var(--bg2);border-color:var(--line)}
+.pm-id{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px}
+.pm-id b{font-size:15px;letter-spacing:1px;color:var(--txt)}
+.pm-tags{display:flex;gap:6px}
+.pm-tag{font-style:normal;font-size:10px;padding:1px 7px;border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+.pm-tag.dead{border-color:#5a2b31;color:#d08a86}
+.pm-tag.cur{border-color:#4a3d1c;color:var(--gold)}
+.pm-stats{display:flex;gap:8px;padding:14px 16px 0}
+.pm-stats span{flex:1;display:flex;flex-direction:column;gap:2px;padding:8px 10px;background:var(--bg2);border:1px solid var(--line);border-radius:9px}
+.pm-stats i{font-style:normal;font-size:10px;color:var(--dim);letter-spacing:1px}
+.pm-stats b{font-size:14px;color:var(--txt)}
+.pm-label{padding:14px 16px 0;font-size:10px;color:var(--dim);letter-spacing:2px}
+.pm-builds{padding:8px 16px 16px}
+.pm-empty{
+  grid-column:1/-1;margin:0;padding:16px;text-align:center;font-size:12px;color:var(--dim);
+  border:1px dashed var(--line);border-radius:9px
+}
+@media (max-width: 560px){
+  .pm-top,.pm-stats{padding-left:12px;padding-right:12px}
+  .pm-label{padding-left:12px}
+  .pm-builds{padding:8px 12px 12px}
+  .pm-stats b{font-size:13px}
+}
+
+/* ============================================================
+ * 竖屏 / 窄屏
+ * ============================================================ */
+@media (max-width: 820px), (max-aspect-ratio: 1/1){
+  .lobby{margin:3vh auto;padding:22px 18px;border-radius:14px}
+  .lobby h1{font-size:21px;letter-spacing:3px}
+  .lobby .sub{margin-bottom:18px}
+  .lobby-room .lobby-grid{grid-template-columns:1fr;gap:12px}
+  .lobby-col .seatlist{max-height:30vh}
+  .lobby .roomcode{font-size:26px;letter-spacing:6px}
+
+  /* 牌桌：左右两列改成上下两条 */
+  .board{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr) auto;gap:6px;padding:6px}
+  .seats{flex-direction:row;overflow-x:auto;overflow-y:hidden;gap:6px;padding-bottom:4px}
+  .seat-card{flex:0 0 auto;min-width:104px;padding:7px 8px}
+
+  /* 顶栏允许换行，计数器单独一行 */
+  .hud{height:auto;flex-wrap:wrap;gap:6px;padding:6px 8px}
+  .hud .counter-bar{order:3;flex:1 0 100%;padding:0}
+  .hud-turn{font-size:10px}
+  .hbtn{padding:4px 9px}
+
+  .mybar{padding:5px 8px 8px}
+  .my-line{height:auto;flex-wrap:wrap;gap:6px}
+  .me-builds{max-width:100%;justify-content:flex-start}
+  .hand{justify-content:flex-start;min-height:150px}
+  .tray{max-height:132px}
+  .tray-label{min-width:52px;font-size:9px}
+  .co-main{font-size:16px}
+  .settings{padding:15px}
+  .set-opts{grid-template-columns:1fr}
+}
+</style></head>
+<body class="frost" style="--frost-a: 0.648; --frost-blur: 13.2px;"><div id="app">
+    <div class="lobby lobby-entry">
+      <button class="icon-btn" id="prefBtn" title="设置" aria-label="设置"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle>
+      <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.11A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.11A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.7a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.11A1.7 1.7 0 0 0 15 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.3 9v.11A1.7 1.7 0 0 0 20.86 10H21a2 2 0 1 1 0 4h-.11A1.7 1.7 0 0 0 19.4 15z"></path></svg></button>
+      <h1>三体 · 黑暗森林</h1>
+      <p class="sub">2–9 人 · 藏好自己，做好清理</p>
+      <div class="field">
+        <label>你的名字</label>
+        <input id="myname" maxlength="12" placeholder="输入名字" value="罗辑">
+      </div>
+      <div class="lobby-actions">
+        <button class="btn primary" id="createBtn">创建对局</button>
+      </div>
+
+      
+        <div class="divider">或加入一场对局</div>
+        <div class="field">
+          <label>对局码</label>
+          <input id="roomcode" class="room" maxlength="5" placeholder="ABCDE">
+        </div>
+        <div class="lobby-actions">
+          <button class="btn" id="joinBtn">加入</button>
+        </div>
+        
+      
+      <div id="apkSlot"><a class="apk-get" href="/download/dark-forest.apk" download="黑暗森林-v1.0.15.apk">
+      <span class="apk-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <rect x="6" y="2.5" width="12" height="19" rx="2.4"></rect>
+  <path d="M12 7.5v6.6"></path><path d="M9.4 11.4 12 14l2.6-2.6"></path><path d="M10.2 18.6h3.6"></path></svg></span>
+      <span class="apk-txt"><b>下载安卓版</b><span>v1.0.15 · 642 KB · 离线 · 同 Wi-Fi · 联机</span></span>
+      <span class="apk-arrow">↓</span>
+    </a></div>
+      <div id="desktopSlot">
+      <a class="apk-get" href="https://github.com/tediandeguandian/darkforest-web/releases/download/v1.0.15/dark-forest-1.0.15-tauri-setup.exe" target="_blank" rel="noopener">
+        <span class="apk-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2"></rect>
+    <path d="M3.5 9h17"></path><path d="M8 9v5"></path><path d="M8 14h4v-5"></path>
+    <path d="M14 14h3v-2"></path><path d="M14 12h2.5"></path>
+  </svg></span>
+        <span class="apk-txt"><b>下载 Windows 版（轻量）</b><span>v1.0.15 · 1.5 MB · 需 WebView2（缺失时自动装）</span></span>
+        <span class="apk-arrow">↗</span>
+      </a>
+      <a class="apk-get" href="https://github.com/tediandeguandian/darkforest-web/releases/download/v1.0.15/dark-forest-1.0.15-win64-setup.exe" target="_blank" rel="noopener">
+        <span class="apk-ico"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2"></rect>
+    <path d="M3.5 9h17"></path><path d="M8 9v5"></path><path d="M8 14h4v-5"></path>
+    <path d="M14 14h3v-2"></path><path d="M14 12h2.5"></path>
+  </svg></span>
+        <span class="apk-txt"><b>下载 Windows 版（完整）</b><span>v1.0.15 · 105 MB · 零依赖，自带浏览器内核</span></span>
+        <span class="apk-arrow">↗</span>
+      </a></div>
+    </div></div><div id="conn"></div></body></html>
