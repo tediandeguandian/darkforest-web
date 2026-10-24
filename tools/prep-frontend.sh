@@ -27,6 +27,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT/js" "$OUT/shared" "$OUT/img"
 
 cp "$ROOT/web/style.css" "$OUT/"
+cp "$ROOT/web/favicon.ico" "$ROOT/web/favicon.png" "$ROOT/web/apple-touch-icon.png" "$OUT/"
 cp "$ROOT/web/img/"*.jpg "$OUT/img/"
 cp "$ROOT/web/js/ui.js" "$ROOT/web/js/local.js" "$ROOT/web/js/net.js" "$OUT/js/"
 [ -f "$ROOT/web/js/net-lan.js" ] && cp "$ROOT/web/js/net-lan.js" "$OUT/js/"

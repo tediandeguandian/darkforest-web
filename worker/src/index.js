@@ -67,6 +67,8 @@ export default {
     /* 静态资源：/ → /web/index.html；/download/* → /web/download/*（对外的短链） */
     let pathname = url.pathname === '/' ? '/web/index.html' : url.pathname;
     if (pathname.startsWith('/download/')) pathname = '/web' + pathname;
+    // favicon：页面在根路径（/），图标文件在 web/ 里，这里补一层映射
+    if (/^\/(favicon\.ico|favicon\.png|apple-touch-icon\.png)$/.test(pathname)) pathname = '/web' + pathname;
     const assetUrl = new URL(pathname + url.search, url);
     // 显式构造 GET，避免把原请求的 body 带进 assets.fetch
     const assetRes = await env.ASSETS.fetch(new Request(assetUrl.toString(), {

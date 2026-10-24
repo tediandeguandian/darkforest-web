@@ -48,6 +48,7 @@ mkdir -p build/gen build/classes build/dex build/assets/www/js build/assets/www/
 # ---------- 1. 网页与共享脚本 ----------
 # 唯一真源在 ../web 与 ../shared，APK 里只放构建时的快照
 cp "$ROOT/web/style.css" build/assets/www/
+cp "$ROOT/web/favicon.ico" "$ROOT/web/favicon.png" "$ROOT/web/apple-touch-icon.png" build/assets/www/ 2>/dev/null || true
 # 背景图（style.css 里 url("img/bg-forest.jpg")）——漏了它 APK 里就是纯色底
 mkdir -p build/assets/www/img
 cp "$ROOT/web/img/"*.jpg build/assets/www/img/ 2>/dev/null || true

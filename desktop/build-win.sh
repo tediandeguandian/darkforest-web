@@ -23,6 +23,7 @@ cp "$ROOT/web/js/ui.js" "$ROOT/web/js/local.js" "$ROOT/web/js/net.js" www/js/
 [ -f "$ROOT/web/js/net-lan.js" ] && cp "$ROOT/web/js/net-lan.js" www/js/
 cp "$ROOT/shared/cards.js" "$ROOT/shared/rules.js" "$ROOT/shared/ai.js" "$ROOT/shared/view.js" www/shared/
 cp "$ROOT/apk/icon/icon-512.png" www/icon.png
+cp "$ROOT/web/favicon.ico" "$ROOT/web/favicon.png" "$ROOT/web/apple-touch-icon.png" www/
 
 # 离线页：file:// 下 ../shared 解析不到，改成本目录里的相对路径
 # （不注入 DF_APP：那是安卓壳的标记，桌面版没有原生桥）
