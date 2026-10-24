@@ -1165,5 +1165,21 @@ console.log('=== 25. 广播不泄露实际距离（只给射程） ===');
   ok(ev25b && ev25b.radius === null, '超距广播的 radius 应为 null（无约束）');
 }
 
+// 26. 弃牌条目带出牌人（窄屏靠它显示「谁出的」，不画跨屏箭头）
+{
+  const g26 = createGame(['甲', '乙', '丙'], { strikeTarget: 'open' });
+  const S26 = g26.state();
+  S26.players[1].hand = [{ uid: 'w1', key: 'photoid' }];
+  S26.currentIdx = 1; S26.step = 'action';
+  g26.discardCards('p1', ['w1']);
+  // 弃牌即结束回合，所以牌会从「本回合」滚进「上一回合」区
+  const d26 = S26.discard.last[0];
+  const v26 = viewFor(g26, 'p0');
+  const e26 = v26.discard.last[0];
+  ok(e26 && e26.actor === 'p1', '弃牌条目应带 actor，实际 ' + JSON.stringify(e26));
+  ok(e26 && e26.actorName === '乙', '弃牌条目应带出牌人名，实际 ' + (e26 && e26.actorName));
+  ok(d26.ownerId === 'p1', '引擎侧仍用 ownerId（别把字段名搞混）');
+}
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail?1:0);

@@ -72,9 +72,13 @@ function visibleEvents(S, playerId) {
  *   在战报滚走之后还能在弃牌堆里查到"刚砸的是哪个星系"。）
  */
 function discardEntry(d, S, hideStrikeTargets) {
+  const owner = (S.players || []).find(p => p.id === d.ownerId);
   const out = {
     uid: d.uid, key: d.key, name: d.name, turn: d.turn,
     batch: d.batch || 0, tag: d.tag || 'discard',
+    // 谁打出来的：窄屏没有空间画跨屏箭头，直接把名字写在牌块上
+    actor: d.ownerId || null,
+    actorName: owner ? owner.name : '',
   };
   if (hideStrikeTargets && d.key === 'lock' && d.turn === S.turnIndex && d.targetGalaxy != null) {
     out.targetGalaxy = d.targetGalaxy;

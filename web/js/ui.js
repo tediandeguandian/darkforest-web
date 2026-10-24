@@ -1213,6 +1213,7 @@ function renderDiscard(v) {
         title="${esc(tip)}">
       ${tagLabel ? `<span class="dc-tag">${tagLabel}</span>` : ''}
       <div class="dc-top"><span class="dc-name">${esc(def.short)}</span><span class="dc-cost">⚡${f.cost}</span></div>
+      ${d.actorName ? `<span class="dc-who">${esc(d.actorName)}</span>` : ''}
       <div class="dc-meta"><span class="dc-eff">${esc(f.main)}</span><span class="dc-sub">${esc(f.sub)}</span>${
         d.targetGalaxy != null ? `<span class="dc-dest">→ ${esc(galShort(d.targetGalaxy))}</span>` : ''}</div>
     </div>`;
@@ -1431,6 +1432,13 @@ function drawArrow() {
   const elapsed = Date.now() - arrow.at;
   const HOLD = 15000, FADE = 1200;
   if (elapsed > HOLD + FADE) { layer.innerHTML = ''; return; }
+
+  // 窄屏（竖屏 / 手机）：布局是上下堆叠的，从座位卡画到弃牌托盘要横穿整个屏幕，
+  // 会把星图、提示文字全部盖住。这种屏宽度下改为在牌块上直接写出是谁打的（.dc-who）。
+  if (window.matchMedia && window.matchMedia('(max-width:1100px)').matches) {
+    layer.innerHTML = '';
+    return;
+  }
 
   const from = document.querySelector(`.seat-card[data-pid="${arrow.playerId}"], .player-card[data-pid="${arrow.playerId}"]`);
   const targets = [...document.querySelectorAll('.dchip.arrowed')];

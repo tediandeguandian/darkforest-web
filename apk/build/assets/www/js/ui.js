@@ -9,6 +9,7 @@ const UI = {
   arrowKey: null,
   apk: null,           // /download/apk.json 的内容（版本 / 体积），拿到过一次就缓存
   pref: null,          // 界面偏好 { frost, level }：毛玻璃开关与浓度
+  desktop: null,       // /download/desktop.json：Windows 版下载入口
   updateDownloaded: null,  // 本次会话里已经下好的更新包文件名（再点就走「直接安装」）
   energySeq: null,     // 已展示过的最大能量事件 id，用于判重
   strikeSeq: null,     // 已展示过的最大"打击落地"事件 id（隐藏目标模式的落点播报）
@@ -212,6 +213,7 @@ function renderEntry() {
           </div>` : ''}
       `}
       <div id="apkSlot"></div>
+      <div id="desktopSlot"></div>
     </div>`;
 
   $('#createBtn').addEventListener('click', () => {
@@ -253,6 +255,7 @@ function renderEntry() {
   if (pb) pb.addEventListener('click', openPrefModal);
 
   mountApkEntry();
+  mountDesktopEntry();
   checkAppUpdate();
 }
 
@@ -262,6 +265,13 @@ const APK_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" st
   stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <rect x="6" y="2.5" width="12" height="19" rx="2.4"/>
   <path d="M12 7.5v6.6"/><path d="M9.4 11.4 12 14l2.6-2.6"/><path d="M10.2 18.6h3.6"/></svg>`;
+/* Windows 版入口的小图标：一扇窗 */
+const WIN_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+    stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3.5" y="4.5" width="17" height="15" rx="2"/>
+    <path d="M3.5 9h17"/><path d="M8 9v5"/><path d="M8 14h4v-5"/>
+    <path d="M14 14h3v-2"/><path d="M14 12h2.5"/>
+  </svg>`;
 
 function mountApkEntry() {
   const slot = $('#apkSlot');
@@ -292,6 +302,44 @@ function mountApkEntry() {
     .then(info => {
       UI.apk = info || false;           // false = 已经问过，确认没有安装包
       if ($('#apkSlot')) paint(info);   // 此时可能已经离开入口页，别再往空气里画
+    });
+}
+
+/* Windows 版下载入口：数据来自 web/download/desktop.json（发版时由
+   tools/publish-github.sh 自动重写，不会过期）。链接指向 GitHub Release，
+   所以走 target=_blank，不用 download 属性。 */
+function mountDesktopEntry() {
+  const slot = $('#desktopSlot');
+  if (!slot) return;
+  // 桌面版自己就是程序，不需要给自己挂下载入口
+  if (typeof window !== 'undefined' && (window.DF_APP || location.protocol === 'file:')) return;
+
+  const paint = data => {
+    const items = (data && Array.isArray(data.items)) ? data.items : [];
+    if (!items.length) return;
+    slot.innerHTML = items.map(it => {
+      // 本地文件（同源 /download/…）直接下，跟安卓版一个体验；
+      // 外链（GitHub Release）才新窗口打开——箭头也跟着换，别骗用户
+      const local = !/^https?:\/\//i.test(it.url || '');
+      const href = esc(it.url || '#');
+      const dl = local && it.file ? ` download="${esc(it.file)}"` : '';
+      const ext = local ? '' : ' target="_blank" rel="noopener"';
+      return `
+      <a class="apk-get" href="${href}"${dl}${ext}>
+        <span class="apk-ico">${WIN_ICON}</span>
+        <span class="apk-txt"><b>${esc(it.label || '下载 Windows 版')}</b><span>${esc(it.sub || '')}</span></span>
+        <span class="apk-arrow">${local ? '↓' : '↗'}</span>
+      </a>`;
+    }).join('');
+  };
+
+  if (UI.desktop !== null) return paint(UI.desktop);
+  fetch('/download/desktop.json', { cache: 'no-store' })
+    .then(r => (r.ok ? r.json() : null))
+    .catch(() => null)
+    .then(data => {
+      UI.desktop = data || false;
+      if ($('#desktopSlot')) paint(data);
     });
 }
 
@@ -1165,6 +1213,7 @@ function renderDiscard(v) {
         title="${esc(tip)}">
       ${tagLabel ? `<span class="dc-tag">${tagLabel}</span>` : ''}
       <div class="dc-top"><span class="dc-name">${esc(def.short)}</span><span class="dc-cost">⚡${f.cost}</span></div>
+      ${d.actorName ? `<span class="dc-who">${esc(d.actorName)}</span>` : ''}
       <div class="dc-meta"><span class="dc-eff">${esc(f.main)}</span><span class="dc-sub">${esc(f.sub)}</span>${
         d.targetGalaxy != null ? `<span class="dc-dest">→ ${esc(galShort(d.targetGalaxy))}</span>` : ''}</div>
     </div>`;
@@ -1383,6 +1432,13 @@ function drawArrow() {
   const elapsed = Date.now() - arrow.at;
   const HOLD = 15000, FADE = 1200;
   if (elapsed > HOLD + FADE) { layer.innerHTML = ''; return; }
+
+  // 窄屏（竖屏 / 手机）：布局是上下堆叠的，从座位卡画到弃牌托盘要横穿整个屏幕，
+  // 会把星图、提示文字全部盖住。这种屏宽度下改为在牌块上直接写出是谁打的（.dc-who）。
+  if (window.matchMedia && window.matchMedia('(max-width:1100px)').matches) {
+    layer.innerHTML = '';
+    return;
+  }
 
   const from = document.querySelector(`.seat-card[data-pid="${arrow.playerId}"], .player-card[data-pid="${arrow.playerId}"]`);
   const targets = [...document.querySelectorAll('.dchip.arrowed')];

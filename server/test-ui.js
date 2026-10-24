@@ -522,6 +522,32 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   w.eval(`delete window.DF_APP; window.__UI.desktop = null;`);
   show(null, null);
 
+  console.log('=== UI 17. 窄屏不画跨屏箭头，改在牌块上标名字 ===');
+  const g17 = createGame(['罗辑', '脱水者', '智子'], { strikeTarget: 'open' });
+  const S17 = g17.state();
+  S17.players[0].galaxy = 1; S17.players[1].galaxy = 3; S17.players[2].galaxy = 6;
+  S17.players[1].hand = [{ uid: 'n1', key: 'cosmic_coop' }, { uid: 'n2', key: 'photoid' }];
+  S17.currentIdx = 1; S17.step = 'action';
+  g17.discardCards('p1', ['n1', 'n2']);
+  S17.arrow = { playerId: 'p1', at: Date.now(), uids: ['n1', 'n2'] };
+
+  // 窄屏：matchMedia 命中 1100px 断点
+  w.eval(`window.matchMedia = q => ({ matches: /max-width:1100px/.test(q), media: q,
+    addListener(){}, removeListener(){} });`);
+  show(viewFor(g17, 'p0'), 'p0');
+  await new Promise(r => setTimeout(r, 60));
+  ok((w.document.querySelector('#arrowLayer').innerHTML || '') === '',
+    '窄屏不该画跨屏箭头（会盖住星图和提示）');
+  const whos = [...w.document.querySelectorAll('.dc-who')].map(e => e.textContent);
+  ok(whos.length >= 2 && whos.every(t => t === '脱水者'), '牌块上应标出是谁打的，实际 ' + JSON.stringify(whos));
+
+  // 宽屏：箭头照画
+  w.eval(`window.matchMedia = q => ({ matches: false, media: q, addListener(){}, removeListener(){} });`);
+  show(viewFor(g17, 'p0'), 'p0');
+  await new Promise(r => setTimeout(r, 60));
+  ok((w.document.querySelector('#arrowLayer').innerHTML || '').length > 0, '宽屏仍应画出箭头线');
+  ok(w.document.querySelectorAll('.dc-who').length >= 2, '名字标签仍然在 DOM 里（宽屏用 CSS 藏掉）');
+
   console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();

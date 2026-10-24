@@ -294,6 +294,10 @@ button{font-family:inherit}
 .dchip.broadcast{border-left-color:#2e5a66}
 .dchip.strike{border-left-color:#6a2e2e}
 .dchip.build{border-left-color:#2e5238}
+/* 牌块上的「谁打的」：宽屏有箭头线，藏起来别添乱；窄屏箭头会横穿屏幕，改看这个 */
+.dc-who{display:none;font-size:9px;color:var(--gold);opacity:.85;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+@media(max-width:1100px){.dc-who{display:block}}
 .dc-top{display:flex;justify-content:space-between;align-items:baseline;gap:6px}
 .dc-name{color:var(--txt);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dc-cost{color:var(--cyan);font-family:ui-monospace,monospace;font-size:10px;flex:0 0 auto}
