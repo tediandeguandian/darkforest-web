@@ -317,12 +317,20 @@ function mountDesktopEntry() {
   const paint = data => {
     const items = (data && Array.isArray(data.items)) ? data.items : [];
     if (!items.length) return;
-    slot.innerHTML = items.map(it => `
-      <a class="apk-get" href="${esc(it.url || '#')}" target="_blank" rel="noopener">
+    slot.innerHTML = items.map(it => {
+      // 本地文件（同源 /download/…）直接下，跟安卓版一个体验；
+      // 外链（GitHub Release）才新窗口打开——箭头也跟着换，别骗用户
+      const local = !/^https?:\/\//i.test(it.url || '');
+      const href = esc(it.url || '#');
+      const dl = local && it.file ? ` download="${esc(it.file)}"` : '';
+      const ext = local ? '' : ' target="_blank" rel="noopener"';
+      return `
+      <a class="apk-get" href="${href}"${dl}${ext}>
         <span class="apk-ico">${WIN_ICON}</span>
         <span class="apk-txt"><b>${esc(it.label || '下载 Windows 版')}</b><span>${esc(it.sub || '')}</span></span>
-        <span class="apk-arrow">↗</span>
-      </a>`).join('');
+        <span class="apk-arrow">${local ? '↓' : '↗'}</span>
+      </a>`;
+    }).join('');
   };
 
   if (UI.desktop !== null) return paint(UI.desktop);

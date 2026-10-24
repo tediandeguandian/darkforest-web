@@ -68,7 +68,7 @@ npm start
 |---|---|
 | 顶栏 | 品牌 + **牌库剩余张数**（只报总数，不列还有哪些牌）+ 战报/退出 |
 | 设置 | 入口卡片右上角、对局顶栏各有一个齿轮，打开的是**同一套**：改名字、毛玻璃开关 + 浓度（存本机，立刻生效） |
-| 下载入口 | 入口页三个：**安卓版**（642 KB）、**Windows 轻量版**（1.5 MB，需 WebView2）、**Windows 完整版**（105 MB，零依赖）；后两个指向 GitHub Release，数据在 `web/download/desktop.json`，发版时由 `tools/publish-github.sh` 自动更新 |
+| 下载入口 | 入口页三个：**安卓版**（642 KB）、**Windows 轻量版**（1.5 MB，需 WebView2）、**Windows 完整版**（105 MB，零依赖）。前两个走**本站直链**（`/download/`，和安卓版一样点开就下），只有完整版因为太大跳 GitHub Release。清单在 `web/download/desktop.json`，发版时由 `tools/publish-github.sh` 自动更新 |
 | 弹窗 | 一律用应用内 `.dlg`（发现新版本 / 退出对局…），**不用 alert/confirm** |
 | 左右两栏 | 对手头像 + 能量 + 手牌数 + 建设 + **在飞打击（含目的地）** |
 | 中央 | 星图（打击飞行的目标星系下方挂红色标签 `光粒 1/3`）+ 大字提示 + 弃牌托盘 |

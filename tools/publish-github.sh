@@ -15,6 +15,7 @@ set -e
 REPO="${1:-darkforest-web}"
 TOKEN="${2:-}"
 BODY_FILE="${3:-}"
+TAURI_EXE="${4:-}"
 [ -n "$REPO" ] && [ -n "$TOKEN" ] || { echo "用法: sh tools/publish-github.sh <仓库名> <PAT> [说明文件]" >&2; exit 1; }
 
 HERE=$(cd "$(dirname "$0")/.." && pwd)
@@ -86,16 +87,32 @@ upload "黑暗森林-v$VER.apk"                           "dark-forest-$VER.apk"
 # 入口页读 web/download/desktop.json（静态文件，随 worker 一起部署）。
 # 在这里重写它，保证链接永远指向刚发布的这个版本——否则发一次版就失效一次。
 REL_BASE="https://github.com/$OWNER/$REPO/releases/download/$TAG"
-node - "$HERE" "$VER" "$REL_BASE" <<'EOF'
+TAURI_EXE="$TAURI_EXE" node - "$HERE" "$VER" "$REL_BASE" <<'EOF'
 const fs = require('fs');
+const path = require('path');
 const [here, ver, base] = process.argv.slice(2);
+const localExe = process.env.TAURI_EXE;
+const localName = 'dark-forest-' + ver + '-tauri-setup.exe';
+
+// 轻量版：有本地文件就拷进 web/download/ 走本站直链（1.5 MB，服务器扛得住），
+// 否则退回 GitHub Release 外链
+let tauri;
+if (localExe && fs.existsSync(localExe)) {
+  fs.copyFileSync(localExe, path.join(here, 'web/download', localName));
+  tauri = { url: '/download/' + localName, file: localName };
+  console.log('· 轻量安装包已放到 web/download/' + localName);
+} else {
+  tauri = { url: base + '/dark-forest-' + ver + '-tauri-setup.exe' };
+  console.log('· 没给 Tauri 安装包路径，轻量版仍指向 GitHub Release');
+}
+
 const out = {
   title: 'Windows 版',
   items: [
     {
       label: '下载 Windows 版（轻量）',
       sub: 'v' + ver + ' · 1.5 MB · 需 WebView2（缺失时自动装）',
-      url: base + '/dark-forest-' + ver + '-tauri-setup.exe',
+      ...tauri,
     },
     {
       label: '下载 Windows 版（完整）',

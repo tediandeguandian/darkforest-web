@@ -156,7 +156,7 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 1.0.1/1.0.2 无法自更新 | 那两版的检测代码用相对路径 + 服务端没给静态 CORS，属于"装上去就再也收不到提示" | 让用户手动装一次 v1.0.3；从 1.0.3 起提示链路才通 |
 | 广播不泄露坐标 | 战报/事件里广播**只给射程**（`radius`），不给实际距离（`distance` 这个字段在广播事件里根本不存在） | 目标星系是公开的，实际距离一公开，发布者坐标就公开了。AI 那边同样只准用 `radius`——用它反推位置才和人眼看到的一样多 |
 | Worker 自定义域名 | `worker/wrangler.toml` 的 routes 两个都要挂：darkforest（新）+ shuwang（旧，用户在其 Cloudflare 侧配了 301 → 新域名） | ⚠️ **删掉旧域名那条 custom domain，Cloudflare 会把它的 DNS 记录一起删掉**，域名直接不解析，用户配的重定向规则也会失效。两条一起挂着，规则优先级更高（301 生效），互不干扰 |
-| 桌面版下载入口 | 入口页读 `web/download/desktop.json`（静态文件）；`tools/publish-github.sh` 发版时按新版本号重写它，链接指向刚建的 Release | 桌面安装包由 CI 出，本地拿不到真实字节数，所以副标题写固定文案 |
+| 桌面版下载入口 | 入口页读 `web/download/desktop.json`。**轻量版（1.5 MB）放本站 `/download/` 直链**，完整版跳 GitHub Release；`tools/publish-github.sh <仓库> <PAT> <说明> <Tauri安装包>` 第 4 个参数给了安装包就自动拷进 `web/download/` 并改成本站直链，不给就退回外链 | 105 MB 不能走 Worker 静态资源（免费额度 100 MB/文件）；1.5 MB 随便放。UI 按 URL 是不是 `http(s)://` 开头自动切换：本站直链加 `download` 属性、箭头 ↓；外链 `target=_blank`、箭头 ↗ |
 | 域名迁移 | 1.0.14 起 `DF_SERVER` 全部指向 **darkforest.dpdns.org**；`shuwang.dpdns.org` 仍挂在同一个 Worker 上（老安装包里烙的是旧地址，删了它们就没法更新），两个自定义域名都写在 `worker/wrangler.toml` 的 routes 里 |
 | 更新弹窗的「新功能」来自 apk.json | `notes` 是目标版本的清单，`history` 是全部版本；前端按「本机版本 < v ≤ 目标版本」聚合，老版本用户一次看到这一跳跨过的全部改动。都来自 `apk/release-notes.json` | 每次发版在 `apk/release-notes.json` 加一条，键名必须和 manifest 的 versionName 一模一样；**永远只有一个整包，不做逐版本递进** |
 | 下载入口靠约定 | 前端只看 `/download/apk.json` 在不在；重装环境忘了跑 `apk/build.sh` 就不会出现入口 | 发版流程：先 `apk/build.sh`（顺带同步 web/download），再 `worker` 部署 |

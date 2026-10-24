@@ -489,7 +489,7 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     window.fetch = (u) => {
       if (String(u).indexOf('desktop.json') >= 0) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ title: 'Windows 版', items: [
-          { label: '下载 Windows 版（轻量）', sub: 'v1.0.15 · 1.5 MB', url: 'https://github.com/x/darkforest-web/releases/download/v1.0.15/dark-forest-1.0.15-tauri-setup.exe' },
+          { label: '下载 Windows 版（轻量）', sub: 'v1.0.15 · 1.5 MB', url: '/download/dark-forest-1.0.15-tauri-setup.exe', file: 'dark-forest-1.0.15-tauri-setup.exe' },
           { label: '下载 Windows 版（完整）', sub: 'v1.0.15 · 105 MB', url: 'https://github.com/x/darkforest-web/releases/download/v1.0.15/dark-forest-1.0.15-win64-setup.exe' },
         ] }) });
       }
@@ -502,8 +502,13 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   const links = w.document.querySelectorAll('#desktopSlot a.apk-get');
   ok(links.length === 2, '应渲染两条 Windows 下载链接，实际 ' + links.length);
   const hrefs = [...links].map(a => a.href);
-  ok(hrefs.every(h => /^https:\/\/github\.com\//.test(h)), '链接应指向 GitHub Release，实际 ' + JSON.stringify(hrefs));
-  ok(links[0] && links[0].getAttribute('target') === '_blank', '外链应新窗口打开');
+  ok(/^https:\/\/github\.com\//.test(hrefs[1] || ''), '完整版应指向 GitHub Release，实际 ' + JSON.stringify(hrefs));
+  ok(links[1] && links[1].getAttribute('target') === '_blank', '外链应新窗口打开');
+  // 轻量版：同源直链 + download 属性，不新窗口
+  ok(links[0] && /\/download\/dark-forest-1\.0\.15-tauri-setup\.exe$/.test(hrefs[0]), '轻量版应是本站直链，实际 ' + hrefs[0]);
+  ok(links[0] && links[0].getAttribute('download') === 'dark-forest-1.0.15-tauri-setup.exe', '轻量版应带 download 属性');
+  ok(links[0] && !links[0].getAttribute('target'), '本站直链不该新窗口打开');
+  ok(links[0] && /↓/.test(links[0].textContent), '本站直链的箭头应是 ↓');
   ok(/tauri-setup\.exe$/.test(hrefs[0] || ''), '第一条应是轻量版（Tauri）');
   ok(/win64-setup\.exe$/.test(hrefs[1] || ''), '第二条应是完整版（Electron）');
   ok(links[0] && /1\.5 MB/.test(links[0].textContent), '轻量版应标出体积：' + (links[0] ? links[0].textContent.trim() : ''));
