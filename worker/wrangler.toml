@@ -1,0 +1,42 @@
+name = "dark-forest"
+main = "src/index.js"
+
+# workers.dev 也留着当兜底地址（自定义域名挂了还能进）
+workers_dev = true
+compatibility_date = "2025-06-01"
+
+# 自定义域名：只留新地址。
+# 旧地址 shuwang.dpdns.org 已经在 Cloudflare 侧设成 301 → darkforest.dpdns.org，
+# 老版本安装包（1.0.13 及更早里烙的是旧地址）照样能跳到新站，
+# 所以这里**不要**再把 shuwang 绑成 custom domain，否则会盖掉那条重定向。
+routes = [
+  { pattern = "darkforest.dpdns.org", custom_domain = true },
+]
+
+# 静态资源：构建时把 web/ 与 shared/ 组装到 public/
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[build]
+command = "sh build.sh"
+
+# 每个房间一个 Durable Object
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+# ── 可选：KV 只做索引/战绩，不存对局状态 ──
+# 创建：npx wrangler kv namespace create META
+# [[kv_namespaces]]
+# binding = "META"
+# id = "粘贴你的 namespace id"
+
+# 人机"思考"时长（毫秒）：玩家能看到人机在犹豫，而不是秒出牌
+[vars]
+AI_THINK_MIN = "5000"
+AI_THINK_MAX = "10000"

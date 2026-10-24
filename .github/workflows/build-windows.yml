@@ -1,0 +1,87 @@
+name: build-windows
+
+# 手动触发，或者打 tag（v1.0.14）时自动构建
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  # ------------------------------------------------------------
+  # Tauri 安装包：约 5 MB，安装时自动检测 / 下载 WebView2
+  # ------------------------------------------------------------
+  tauri:
+    name: Tauri 安装包（小）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 整理前端（web/ + shared/ → desktop-tauri/www）
+        shell: bash
+        run: sh desktop-tauri/prep.sh
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-tauri/src-tauri
+
+      - name: 安装 tauri-cli
+        shell: bash
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: 构建 NSIS 安装包
+        shell: bash
+        working-directory: desktop-tauri
+        run: cargo tauri build --bundles nsis
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dark-forest-tauri-setup
+          path: desktop-tauri/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  # ------------------------------------------------------------
+  # Electron 安装包：约 90 MB，不依赖 WebView2
+  # ------------------------------------------------------------
+  electron:
+    name: Electron 安装包（大，零依赖）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 整理前端（web/ + shared/ → desktop/www）
+        shell: bash
+        run: sh tools/prep-frontend.sh desktop/www
+
+      - name: 生成图标 ico
+        shell: bash
+        run: |
+          mkdir -p desktop/build
+          python -c "from PIL import Image; Image.open('apk/icon/icon-512.png').convert('RGBA').save('desktop/build/icon.ico', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])" || echo "跳过图标（装 Pillow 的机器才有）"
+
+      - name: 安装依赖
+        shell: bash
+        working-directory: desktop
+        run: npm ci
+
+      - name: 构建 NSIS 安装包
+        shell: bash
+        working-directory: desktop
+        run: npx electron-builder --win nsis --x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dark-forest-electron-setup
+          path: desktop/release/*.exe
+          if-no-files-found: error

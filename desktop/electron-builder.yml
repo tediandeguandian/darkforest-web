@@ -1,0 +1,42 @@
+appId: com.shuwang.darkforest
+productName: 黑暗森林
+copyright: shuwang
+directories:
+  output: release
+  buildResources: build
+
+# 只打这几样：main.js + 页面 + package.json
+files:
+  - main.js
+  - package.json
+  - www/**/*
+
+# ⚠️ 不用 asar：本机文件沙箱会在 asar 打包时失败（详见 README）
+asar: false
+
+# ⚠️ electronDist：本机沙箱会拒绝 electron-builder 下载/解压 Electron 时的
+#    锁文件操作（win-unpacked.tmp.lock），所以指向一份手动解压好的 win32 运行时，
+#    让它跳过「下载 + 解包」直接拷贝。CI 上可以删掉这行让它自动下载。
+electronDist: build/electron-dist
+
+# 最高压缩（NSIS 用 LZMA 固实压缩，比 zip 小很多）
+compression: maximum
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: 黑暗森林-${version}-win64-setup.${ext}
+
+nsis:
+  oneClick: false                     # 有向导：可以选安装目录
+  perMachine: false                   # 默认装到当前用户，不需要管理员权限
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 黑暗森林
+  installerLanguages: [zh_CN]
+  deleteAppDataOnUninstall: false      # 卸载不删存档与设置
+  runAfterFinish: true

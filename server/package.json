@@ -1,0 +1,13 @@
+{
+  "name": "dark-forest-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "三体·黑暗森林 桌游后端（房间 + 权威状态 + 可见性过滤）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

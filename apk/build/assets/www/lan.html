@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>三体 · 黑暗森林（局域网）</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .lan-mask{position:fixed;inset:0;z-index:600;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;padding:24px}
+  .lan-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    padding:26px 28px;width:min(380px,92vw);text-align:center}
+  .lan-card h1{font-size:20px;letter-spacing:4px;color:var(--gold);margin:0 0 6px}
+  .lan-card p{font-size:12px;color:var(--dim);margin:0 0 18px;line-height:1.6}
+  .lan-card input{width:100%;background:var(--bg2,#191225);border:1px solid var(--line);
+    border-radius:8px;padding:10px 12px;color:var(--txt);font-size:14px;outline:none;margin-bottom:12px}
+  .lan-card input:focus{border-color:var(--gold)}
+  .lan-card .btn{width:100%;padding:11px}
+  .lan-err{color:#e0554f;font-size:12px;margin-top:10px;min-height:16px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="conn" id="conn">连接已断开，正在重连…</div>
+
+<div class="lan-mask" id="lanMask">
+  <div class="lan-card">
+    <h1>三体 · 黑暗森林</h1>
+    <p>你正在加入同一 Wi-Fi 下的对局<br><span style="color:var(--gold)">输入名字即可入座</span></p>
+    <input id="lanName" maxlength="12" placeholder="你的文明名" autocomplete="off">
+    <button class="btn primary" id="lanGo">加入对局</button>
+    <div class="lan-err" id="lanErr"></div>
+  </div>
+</div>
+
+<script src="shared/cards.js"></script>
+<script src="shared/rules.js"></script>
+<script src="shared/ai.js"></script>
+<script src="shared/view.js"></script>
+<script src="js/net-lan.js"></script>
+<script src="js/ui.js"></script>
+<script>
+(function () {
+  const mask = document.getElementById('lanMask');
+  const input = document.getElementById('lanName');
+  const err = document.getElementById('lanErr');
+  const go = document.getElementById('lanGo');
+  try { input.value = localStorage.getItem('df_name') || ''; } catch (e) {}
+
+  go.addEventListener('click', () => {
+    const name = (input.value || '').trim() || '无名文明';
+    try { localStorage.setItem('df_name', name); } catch (e) {}
+    err.textContent = '加入中…';
+    go.disabled = true;
+    Net.joinRoom('LAN', name);
+    setTimeout(() => {
+      if (!Net.connected && !Net.view) { err.textContent = '还没收到主机回应，请确认和房主在同一个 Wi-Fi'; go.disabled = false; }
+    }, 3000);
+  });
+
+  // 收到任何状态就说明入座成功，收起遮罩
+  Net.on((type) => {
+    if ((type === 'state' || type === 'lobby') && mask.parentNode) {
+      mask.style.display = 'none';
+      mask.remove();
+    }
+    if (type === 'error') { err.textContent = String(arguments[1] || '操作失败'); go.disabled = false; }
+  });
+
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') go.click(); });
+})();
+</script>
+</body>
+</html>

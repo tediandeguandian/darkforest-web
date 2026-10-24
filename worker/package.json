@@ -1,0 +1,15 @@
+{
+  "name": "dark-forest-worker",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "build": "sh build.sh",
+    "dev": "sh build.sh && wrangler dev",
+    "deploy": "sh build.sh && wrangler deploy",
+    "test": "sh build.sh && mkdir -p .test && npx esbuild src/index.js --bundle --format=esm --outfile=.test/bundle.mjs && node test-do.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "wrangler": "^4.0.0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "name": "dark-forest",
+  "productName": "黑暗森林",
+  "version": "1.0.14",
+  "description": "三体 · 黑暗森林 桌面版",
+  "main": "main.js",
+  "private": true,
+  "author": "shuwang",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "smoke": "env -u ELECTRON_RUN_AS_NODE electron smoke.js --no-sandbox --disable-gpu",
+    "build:win": "sh build-win.sh"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0"
+  }
+}

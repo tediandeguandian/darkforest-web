@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与图标母版的底色一致，自适应图标做视差位移时不会露边 -->
+    <color name="ic_launcher_background">#141613</color>
+</resources>

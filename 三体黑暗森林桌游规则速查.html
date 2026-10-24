@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三体·黑暗森林 桌游规则速查手册</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#141922; --panel2:#1b2130; --line:#2a3242;
+    --txt:#e3e8f0; --dim:#9aa6b8; --gold:#e8b64c; --cyan:#5ec8d8;
+    --red:#e05a55; --green:#5fb87a; --purple:#9b7fd4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.75;font-size:15px;}
+  .wrap{max-width:940px;margin:0 auto;padding:40px 24px 80px;}
+  h1{font-size:30px;margin:0 0 6px;letter-spacing:2px}
+  .sub{color:var(--dim);font-size:14px;margin-bottom:8px}
+  .tagbar{margin:16px 0 36px;display:flex;gap:8px;flex-wrap:wrap}
+  .tag{background:var(--panel2);border:1px solid var(--line);border-radius:20px;
+    padding:4px 14px;font-size:12px;color:var(--dim)}
+  h2{font-size:22px;margin:44px 0 14px;padding-left:12px;border-left:4px solid var(--gold)}
+  h3{font-size:17px;margin:26px 0 10px;color:var(--cyan)}
+  p{margin:10px 0}
+  ul{margin:10px 0;padding-left:22px}
+  li{margin:5px 0}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;
+    background:var(--panel);border-radius:8px;overflow:hidden}
+  th{background:var(--panel2);text-align:left;padding:10px 12px;font-weight:600;
+    border-bottom:1px solid var(--line);color:var(--gold)}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:16px 20px;margin:14px 0}
+  .quote{border-left:3px solid var(--purple);padding:8px 16px;margin:14px 0;
+    background:var(--panel);color:var(--dim);font-style:italic;border-radius:0 8px 8px 0}
+  .warn{border-left:3px solid var(--red);padding:10px 16px;margin:14px 0;
+    background:rgba(224,90,85,.08);border-radius:0 8px 8px 0;font-size:14px}
+  .tip{border-left:3px solid var(--green);padding:10px 16px;margin:14px 0;
+    background:rgba(95,184,122,.08);border-radius:0 8px 8px 0;font-size:14px}
+  .flow{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+  .step{flex:1;min-width:150px;background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;padding:12px 14px}
+  .step b{color:var(--gold);display:block;margin-bottom:4px;font-size:14px}
+  .step span{font-size:13px;color:var(--dim)}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  @media(max-width:720px){.split{grid-template-columns:1fr}}
+  .gametitle{font-size:19px;font-weight:700;color:var(--gold);margin-bottom:2px}
+  .meta{font-size:13px;color:var(--dim)}
+  code{background:var(--panel2);padding:1px 6px;border-radius:4px;font-size:13px}
+  hr{border:none;border-top:1px solid var(--line);margin:36px 0}
+  footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>三体·黑暗森林 桌游规则速查</h1>
+<div class="sub">两款同名产品的完整玩法、流程与策略要点</div>
+<div class="tagbar">
+  <span class="tag">隐藏坐标 · 双盲博弈</span>
+  <span class="tag">广播试探</span>
+  <span class="tag">延时打击</span>
+  <span class="tag">舰船竞速</span>
+  <span class="tag">2–9 人</span>
+</div>
+
+<div class="warn">
+<b>先分清是哪一款。</b>市面上有两套都带"黑暗森林"名字的三体桌游，机制几乎毫无关系：
+<ul style="margin:8px 0 0">
+<li><b>A 款｜《三体 黑暗森林·桌游》（游歌桌游）</b>——隐藏坐标 + 卡牌博弈，主打"藏好自己，做好清理"，规则较重。</li>
+<li><b>B 款｜《我的三体：黑暗森林》（三体宇宙授权 / 卡卡士多 × Asmodee）</b>——舰船竞速 + 骰子驱动，主打"逃亡与背叛"，上手快。</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A 款｜《三体 黑暗森林·桌游》核心规则</h2>
+<div class="meta">游歌桌游出品 · 民间设计被官方认可 · 限量约 300 套 · 支持 2–9 人</div>
+
+<h3>1. 游戏定位与胜利条件</h3>
+<p>每位玩家代表一个<b>隐藏在星图中的文明</b>。核心张力来自一句原著台词——<b>"藏好自己，做好清理。"</b>你既要不让别人知道自己的坐标，又要推测别人的坐标并抢先清理掉。</p>
+<div class="quote">谁活到最后，谁就是赢家。也可能所有文明都被清理，全场无赢家。</div>
+<p><b>注意：</b>这是"最后幸存者"制，不是积分制。被早期淘汰的玩家参与感很低，这是该作口碑两极的主要原因之一。</p>
+
+<h3>2. 开局准备</h3>
+<ul>
+<li>星图上共有 <b>1–9 号星系</b>，每位玩家随机抽取一张<b>星系牌</b>决定自己的坐标，<b>对其他玩家严格保密</b>。</li>
+<li>每位玩家获得初始能量，摸 <b>4 张</b>手牌。</li>
+<li>由最近看过科幻作品的玩家作为起始玩家，之后<b>顺时针</b>进行。</li>
+</ul>
+
+<h3>3. 回合流程（三段式）</h3>
+<div class="flow">
+  <div class="step"><b>① 生产</b><span>默认获得 1 点能量；若建设区已有生产设施，额外获得对应能量。</span></div>
+  <div class="step"><b>② 行动</b><span>二选一：<br>a. 打出任意张牌<br>b. 弃置任意张牌</span></div>
+  <div class="step"><b>③ 补给</b><span>将手牌补充至 4 张，然后交给下一位玩家。</span></div>
+</div>
+<div class="tip"><b>关键理解：</b>每回合你只能在"出牌"和"弃牌"里选一件事做。出牌就必然暴露信息，弃牌则是在囤积与沉默。这个二选一就是整局的节奏阀门。</div>
+
+<h3>4. 弃牌堆机制（网页版新增）</h3>
+
+<p>全场共用<b>一个公共弃牌堆</b>，所有人弃掉或打完的牌都进这里，<b>对全员公开</b>。这是网页版为了让"信息有保质期"而新增的机制。</p>
+
+<ul>
+<li><b>弃牌的那一瞬间，你知道是谁弃的</b>——会有<b>临时箭头</b>从弃牌者指向那张牌。</li>
+<li><b>箭头至少保留 15 秒</b>：即使下一张牌已经出现，也不会提前消失。满 15 秒后才开始渐隐（约 1 秒淡出），淡出后牌上不留任何名字或标记。</li>
+<li><b>弃牌堆列表本身不标记归属。</b>事后翻查只看得到牌名与类型，看不到是谁弃的。</li>
+<li><b>可查看范围：本回合 + 上一回合。</b>再早的牌已经洗回牌库，谁也查不到。</li>
+<li><b>每位玩家回合结束时</b>结算：上一回合的弃牌<b>全部洗回牌库</b>，本回合弃牌滚动成为新的"上一回合弃牌区"（只报洗回数量，无洗牌动画）。</li>
+</ul>
+
+<div class="tip">
+<b>三档信息新鲜度：</b>
+<table style="margin:8px 0 0">
+<tr><th style="width:26%">时刻</th><th style="width:20%">归属可见性</th><th>类比</th></tr>
+<tr><td>弃牌那一瞬间</td><td>✅ 可见（箭头）</td><td>亲眼看见他把牌扔进去</td></tr>
+<tr><td>弃牌后 0–15 秒</td><td>✅ 保持可见</td><td>下一张牌出现也不提前消失，你有足够时间看清</td></tr>
+<tr><td><b>满 15 秒后</b></td><td>⏳ 开始渐隐</td><td>印象开始模糊</td></tr>
+<tr><td>躺在弃牌堆列表里</td><td>❌ 完全匿名</td><td>事后翻查，无迹可寻</td></tr>
+</table>
+</div>
+
+<p style="font-size:14px;color:var(--dim)">两个时间尺度别混淆：弃牌堆列表的滚动周期是 <b>1 个回合</b>；箭头的生命周期是 <b>15 秒</b>。15 秒基本杜绝了"没看清"，所以真正的时间衰减点只剩两个——15 秒后箭头消失、事后翻查无归属。<b>信息从"必达"变成"只能靠记"。</b></p>
+
+<table>
+<tr><th style="width:22%">时刻</th><th style="width:28%">本回合弃牌区</th><th style="width:28%">上一回合弃牌区</th><th>可见</th></tr>
+<tr><td>A 的回合进行中</td><td>A 及他人在 A 回合内弃的牌</td><td>更早一回合的牌</td><td>两者都可见</td></tr>
+<tr><td><b>A 回合结束</b></td><td>→ 滚为上一回合区</td><td>→ <b>洗回牌库</b></td><td>—</td></tr>
+<tr><td>B 的回合进行中</td><td>B 及他人在 B 回合内弃的牌</td><td>A 回合的牌</td><td>两者都可见</td></tr>
+</table>
+
+<div class="tip">
+<b>什么叫"一回合"：</b>一回合 = <b>一位玩家的回合</b>，并且<b>包括其他人在这一回合内打出的牌</b>（比如回应你广播的那张牌、被科技锁死逼着弃掉的建造牌）。规则书里"所有玩家行动完毕后进入下一回合"说的是一圈，本页称<b>「轮」</b>，以免混淆。
+</div>
+
+<div class="warn">
+<b>匿名之后，三条影响的真实强度（按强弱排序）：</b>
+<ul style="margin:8px 0 0">
+<li><b>"弃牌＝沉默"部分回归，"当下"这一层几乎完全公开。</b>箭头保底 15 秒，基本保证所有人都看清了是谁弃的。所以示弱战术赌的不再是"没人看见"，而是<b>"看见了也记不住"</b>——15 秒后箭头消失、事后查不到归属，它专门克制记性差的对手。</li>
+<li><b>科技锁死是半张情报牌。</b>逼出的建造牌进堆时，当下能看到是谁在被逼弃；窗口一过只剩牌名。要榨干它，你得先答对"那个星系里住着谁"——<b>位置推断越准，收益越高</b>。</li>
+<li><b>死人的底牌照样保不住。</b>"谁被淘汰"本身就是公开事件，按同一回合一对就锁定了。这条<b>几乎不受匿名化影响</b>。</li>
+</ul>
+</div>
+
+<div class="tip">
+<b>净效果，一句话：当下的动作看得见，历史的记录查不到，中间的模糊地带靠记忆填。</b>牌库构成情报完全保留，事件关联推断基本保留，而"纯粹的个人意图"变成了一条<b>随时间衰减</b>的信息。它制造的是"合理怀疑空间"，不是"信息黑洞"。
+</div>
+
+<p style="font-size:14px;color:var(--dim)">信息只有两个回合的保质期。想利用旧信息，只能靠自己的记忆——<b>记性就是战力</b>，这是本作最反直觉也最核心的一点。</p>
+
+<h3>5. 手牌三类：广播 / 建设 / 打击</h3>
+
+<h3>① 广播牌 —— 信息试探与博弈</h3>
+<p>广播牌是<b>双面牌</b>（一面"合作"、一面"伪装"），打出时<b>背面朝上</b>，最后同时翻开。</p>
+<table>
+<tr><th style="width:22%">广播类型</th><th>能量消耗</th><th>广播距离</th><th>原著设定</th></tr>
+<tr><td><b>恒星广播</b></td><td>0</td><td>1</td><td>以恒星为超级天线，向系外发布恒星级功率电磁波</td></tr>
+<tr><td><b>宇宙广播</b></td><td>1</td><td>2</td><td>以简并态物质作为引力波震动弦</td></tr>
+<tr><td><b>超距广播</b></td><td>2</td><td><b>∞</b></td><td>利用宇宙膜结构，从高维空间投影产生超距通讯</td></tr>
+</table>
+<p style="font-size:14px;color:var(--dim)">距离 <b>∞</b> = 可指定任意星系，响应条件永远成立，因此不构成任何位置约束——这正是它成为唯一不暴露位置的广播的原因。</p>
+
+<p><b>发布流程：</b></p>
+<ul>
+<li>发布者背面朝上打出一张广播牌，指定<b>一个星系</b>；该星系与<b>自己所在星系</b>的距离必须 ≤ 广播距离。</li>
+<li>其他玩家可自由选择是否<b>回应</b>：回应者所在星系与<b>被广播星系</b>的距离必须 ≤ 其广播牌距离。</li>
+<li><b>强制回应：</b>若被指定的星系正是某玩家所在地，且他手上有广播牌，则他<b>必须回应</b>——<b>例外：该星系建有监听基地时，可选择不回应</b>。</li>
+<li>多人回应时，由发布者挑<b>其中一名</b>结算，其余人收回广播牌。</li>
+</ul>
+
+<p><b>结算（双方同时翻开并支付能量）：</b></p>
+<table>
+<tr><th>发布方 ＼ 响应方</th><th>合作</th><th>伪装</th></tr>
+<tr><td><b>合作</b></td><td>各 +3 能量</td><td>响应方 +5 / 发布方 0</td></tr>
+<tr><td><b>伪装</b></td><td>发布方 +5 / 响应方 0</td><td>双方均 0</td></tr>
+</table>
+<p><b>无人回应</b>时，弃置该广播牌，发布者获得 <b>1 点能量</b>。</p>
+<p style="font-size:14px;color:var(--dim)">设计师补充：广播牌<b>背面打出时不消耗能量，仅结算时扣费</b>——试探几乎零成本。</p>
+
+<div class="tip">
+<b>设计精髓：</b>这是一个典型的<b>囚徒困境</b>——单看收益，选"伪装"永远不吃亏（0 或 +5），选"合作"最差 0、最好 +3。但真正的代价不在能量表里：<b>无论合作还是伪装，回应本身就在泄露你的位置信息</b>。广播距离就是半径，回应即等于承认"我在这个圈内"。超距广播是唯一例外。<br>
+<b>规则漏洞：</b>强制回应全凭自觉，手里有牌却装作没有，事后无法验证。开局建议所有人约定由一人担任"宇宙监督员"核验。
+</div>
+
+<h3>② 建设牌 —— 长期投资（8 张，效果与费用全部确认）</h3>
+<p style="font-size:14px;color:var(--dim)">效果描述为卡面原文，能量为卡面标价，来源为实物扫描图（张数为调整后：原 3 张的全部改为 2 张，原 5 张的全部改为 4 张）。</p>
+<div class="warn">
+<b>建设牌属于「玩家」，不绑定星系。</b>建设区是你面前的资产栏，不是版图上的建筑。所以：<b>"恒星依赖"＝依赖你当前所在星系的恒星</b>；打击命中某星系时，实际受影响的是<b>在那个星系里的玩家</b>及其建设牌，星系本身没有建筑可毁。戴森球"每个星系只能建造 1 个"是唯一的空间约束（同一星系全场唯一）。
+</div>
+<table>
+<tr><th style="width:15%">卡牌</th><th style="width:8%">张数</th><th style="width:8%">能量</th><th>效果（卡面原文）</th></tr>
+<tr><td><b>太阳能阵列</b></td><td>5→4</td><td>2</td><td>每回合开始时，能量 +1；依赖恒星</td></tr>
+<tr><td><b>聚变反应堆</b></td><td>4</td><td>3</td><td>每回合开始时，能量 +1；不依赖恒星</td></tr>
+<tr><td><b>反物质引擎</b></td><td>3→2</td><td>6</td><td>每回合开始时，能量 +2；不依赖恒星</td></tr>
+<tr><td><b>戴森球</b></td><td>3→2</td><td>6</td><td>每回合开始时，能量 +3；依赖恒星；每个星系只能建造 1 个</td></tr>
+<tr><td><b>掩体星环</b></td><td>5→4</td><td>6</td><td>可在打击 2 及以下的打击中幸存</td></tr>
+<tr><td><b>量子幽灵</b></td><td>3→2</td><td>8</td><td>可在打击 3 及以下的打击中幸存（<b>存活但弃置所有建设牌；恒星仍被毁灭</b>）</td></tr>
+<tr><td><b>光速飞船</b></td><td>2</td><td>10</td><td>可跃迁至随机其他星系；不能携带能量和建造牌；只能使用 1 次；<b>仅在遭到打击后可发动</b></td></tr>
+<tr><td><b>监听基地</b></td><td>2</td><td>2</td><td>所在星系接收广播后，可不回应（含强制回应）</td></tr>
+</table>
+<p><b>打击 × 建筑对应：</b>热核(1) 无特殊效果 → 光粒(2) 掩体星环/量子幽灵幸存、<b>恒星仍灭</b> → 湮灭(3) 唯量子幽灵幸存（<b>弃置所有建设牌 + 恒星仍灭</b>）→ 降维(∞) 无解。科技锁死(∞) 使目标星系玩家弃掉手中所有建造牌，不影响生存。</p>
+<p style="font-size:14px;color:var(--dim)"><b>防御只保"人"，不保"星系"。</b>光粒与湮灭都写着"无论是否被防御"——防御成功只是玩家活下来，恒星该灭还是灭。所以量子幽灵买到的是命，不是局面：活下来的人手里只剩一堆不产能量的牌。</p>
+<ul>
+<li><b>建设牌正面放置</b>，全场可见"某人建了什么"——蹲产能 / 防御 / 为挨打买保险 / 准备沉默，都是公开的意图信号。</li>
+<li><b>恒星依赖分界已确认</b>：太阳能阵列 + 戴森球依赖恒星，聚变反应堆 + 反物质引擎不依赖。光粒打击熄灭恒星后，前者断产能，后者无痛继续发育。</li>
+<li><b>卡面推翻三处早期推测</b>：反物质引擎是产能牌（+2/回合）不是移动牌；监听基地是免回应牌不是侦查牌；光速飞船的目的地是随机而非指定。</li>
+<li><b>监听基地是信息战利器</b>：它让"没回应"不再等于"不在这个星系"——手里有牌也可以合法沉默，2 费门槛极低。</li>
+</ul>
+
+<h3>③ 打击牌 —— 延时生效的"清理"</h3>
+<p>这是全作最贴题的机制：<b>打击不针对玩家，只针对坐标</b>，而且<b>不立即生效</b>。</p>
+<table>
+<tr><th style="width:16%">打击牌</th><th style="width:8%">张数</th><th style="width:8%">能量</th><th style="width:8%">等级</th><th>效果</th><th style="width:26%">原著设定</th></tr>
+<tr><td><b>科技锁死</b></td><td>2</td><td>4</td><td>∞</td><td>打击生效时，<b>目标星系玩家</b>需弃置手中<b>所有建造牌</b>，不影响其生存</td><td>将微观粒子雕刻成超级计算机，干扰目标星系的基础物理研究</td></tr>
+<tr><td><b>热核打击</b></td><td>4</td><td>4</td><td>1</td><td>打击无特殊效果</td><td>向目标行星发射恒星级核弹，造成毁灭性打击</td></tr>
+<tr><td><b>光粒打击</b></td><td>4</td><td>6</td><td>2</td><td><b>无论是否被防御</b>，均毁灭目标恒星</td><td>将一个质量点加速至接近光速，使被其撞击的恒星爆发</td></tr>
+<tr><td><b>湮灭打击</b></td><td>2</td><td>8</td><td>3</td><td><b>无论是否被防御</b>，均毁灭目标恒星<b>及所有建造牌</b></td><td>反物质导弹到达目标星系时，会发生完全的质能转换，湮灭一切物质</td></tr>
+<tr><td><b>降维打击</b></td><td>2</td><td>10</td><td>∞</td><td><b>无论是否被防御</b>，均毁灭目标星系<b>及其中所有玩家</b></td><td>发射二向箔，将三维空间压缩至二维，使整个星系彻底毁灭</td></tr>
+</table>
+<p style="font-size:14px;color:var(--dim)">能量、等级与效果均为卡面原文。等级 <b>∞</b> = 无法被防御；1/2/3 可被阈值建筑抵挡——掩体星环扛 ≤2（热核+光粒），量子幽灵扛 ≤3（热核+光粒+湮灭）。</p>
+
+<p><b>生效机制（重点）：</b></p>
+<ul>
+<li>打出后<b>正面朝上</b>放在自己面前，指定 1 个目标星系。</li>
+<li>计算<b>自己星系到目标星系的距离</b>。每轮到打击者的回合，就在该打击牌上放置 <b>1 个进度指示物</b>。</li>
+<li>当指示物数量<b>等于距离</b>时，打击者宣布打击生效 → 结算效果 → 弃置该牌。</li>
+<li><b>宣告使用时，其他玩家可以与你谈判</b>，之后你可选择继续打击，<b>或者主动撤回</b>。</li>
+<li><b>主动撤回：</b>弃置该打击牌、移除全部进度指示物、<b>已支付的能量不退</b>。不占用行动，结算前随时可做。</li>
+</ul>
+<div class="tip"><b>撤回让谈判变了性质：</b>"打击一旦发出无法收回"时，威慑只能靠口头承诺；现在"你把坐标告诉我，我就撤回"是一句可以被兑现的话——谈判从空口威胁升级成<b>可交割的交易</b>，弱势方也有了明确的止损通道。</div>
+<div class="tip"><b>为什么好玩：</b>有人发布了打击，也公开了目标星系，但<b>没人知道打击什么时候到达</b>。这段"飞行时间"就是全场的信息战窗口——目标玩家可能已经换位置跑了，第三方可能趁机补刀，而发布者自己也在倒计时里暴露了坐标。</div>
+
+<p><b>打击结算与连锁：</b></p>
+<ul>
+<li>被成功打击的玩家<b>立即淘汰</b>。</li>
+<li>打击者立即获得 <b>剩余玩家数量 × 3</b> 点能量（清场奖励，越早动手收益基数越大）。</li>
+<li><b>被淘汰者已发出的打击牌依然会继续结算直到生效</b>——死人也会开枪，这是黑暗森林最冷酷的细节。</li>
+<li>被淘汰者的其余手牌进入弃牌区。</li>
+</ul>
+
+<h3>④ 完整牌库构成（64 张）</h3>
+<p style="font-size:14px;color:var(--dim)">张数已按最新配比调整：<b>原 3 张的全部改为 2 张，原 5 张的全部改为 4 张</b>（广播牌不变），牌库总量由 72 张降至 <b>64</b> 张。全部 19 种卡牌的能量、等级与效果描述均已由实物扫描图确认。</p>
+<table>
+<tr><th style="width:14%">类别</th><th>构成</th><th style="width:9%">原张数</th><th style="width:9%">调整后</th></tr>
+<tr><td><b>广播牌</b>（不变）</td><td>恒星广播 合作 9 / 伪装 5 · 宇宙广播 合作 6 / 伪装 4 · 超距广播 合作 2 / 伪装 2</td><td>28</td><td><b>28</b></td></tr>
+<tr><td><b>打击牌</b></td><td>科技锁死 2 · 热核打击 4 · 光粒打击 4 · 湮灭打击 2 · 降维打击 2</td><td>17</td><td><b>14</b></td></tr>
+<tr><td><b>建设牌</b></td><td>太阳能阵列 4 · 聚变反应堆 4 · 戴森球 2 · 反物质引擎 2 · 掩体星环 4 · 量子幽灵 2 · 光速飞船 2 · 监听基地 2</td><td>27</td><td><b>22</b></td></tr>
+<tr><td><b>合计</b></td><td>广播 28 + 打击 14 + 建设 22</td><td><b>72</b></td><td><b>64</b></td></tr>
+</table>
+<div class="warn"><b>仍待确认：</b>① 清单截图底部被截断，牌库可能还有未显示的卡牌；② 光速飞船"随机跃迁"与科技锁死"目标星系玩家"两处与设计师答疑有分歧，建议按卡面实现。</div>
+
+<h3>6. 星系状态标记</h3>
+<p><b>被特殊打击的星系必须留下永久标记</b>——这是版图上唯一"永不遗忘"的信息，全场共享。</p>
+<table>
+<tr><th style="width:20%">打击</th><th style="width:18%">星系标记</th><th>后果</th></tr>
+<tr><td><b>光粒打击</b>（等级 2）</td><td>⚫ <b>黑色</b></td><td>恒星毁灭 → 该星系玩家的<b>依赖恒星建设牌永久失效</b>（牌还在，但不再产能）</td></tr>
+<tr><td><b>湮灭打击</b>（等级 3）</td><td>🟣 <b>紫色</b>（同时具备黑色）</td><td>恒星毁灭 + 该星系玩家<b>弃置所有建设牌</b>。量子幽灵可让玩家存活，但上面两条照常生效</td></tr>
+<tr><td><b>降维打击</b>（等级 ∞）</td><td>🔴 <b>红色</b></td><td>星系被彻底清除；后续光速飞船跃迁若抽到该星系，需<b>展示并重抽</b></td></tr>
+<tr><td>热核打击（等级 1）</td><td>无</td><td>只淘汰玩家，星系本身无损</td></tr>
+<tr><td>科技锁死（等级 ∞）</td><td>无</td><td>只影响手牌，不改变星系状态</td></tr>
+</table>
+<div class="warn"><b>紫色与黑色是叠加，不是替代。</b>湮灭打击写的是"毁灭目标恒星<b>及</b>所有建造牌"——恒星也毁了。所以紫色星系同时具备黑色效果：量子幽灵救下的人，手里只剩一堆不产能量的牌。</div>
+
+<h3>7. 实战策略要点</h3>
+<div class="split">
+<div class="card">
+<b style="color:var(--green)">藏好自己（苟派）</b>
+<ul>
+<li>前两轮务必低调，不要成为场上"最有威胁"的那个。</li>
+<li>出牌即信息泄露；<b>弃牌的代价小得多</b>——弃牌堆匿名，别人看得到牌、看不到人。弃牌重新成为首选的沉默手段，还能<b>故意弃掉威慑牌来示弱</b>。</li>
+<li>优先建生产设施，靠被动收入滚雪球，让别人替你挨第一波打击。</li>
+<li>只在能确定收益时才打击，宁可不做也不要暴露坐标。</li>
+</ul>
+</div>
+<div class="card">
+<b style="color:var(--red)">做好清理（猎手派）</b>
+<ul>
+<li>用<b>低距离广播</b>反复试探，用"谁回应了"来二分定位对手。</li>
+<li>广播是探测手段，能量收益只是副产品——别为了 +3 暴露自己。</li>
+<li>抢先动手：剩余人数 ×3 的能量奖励在人多时极其可观。</li>
+<li>优先用"科技锁死"废掉发育型玩家的基建，成本低、仇恨小。</li>
+</ul>
+</div>
+</div>
+<div class="card">
+<b style="color:var(--gold)">通用心法</b>
+<ul>
+<li><b>距离就是信息。</b>每次广播/打击都在画一个圈，场上的圈越画越小，位置就越明确。记性好的玩家优势巨大。</li>
+<li><b>信息只有两个回合的保质期。</b>弃牌堆只留上一回合，更早就洗回牌库再也查不到。想用旧信息只能靠自己的记忆——<b>记性就是战力</b>。</li>
+<li><b>盯紧弃牌堆，重点就是那一瞬间。</b>箭头只活到下一张牌出现——<b>当下看清是谁弃的，就是硬情报</b>；错过就只能靠推理补。列表能告诉你牌库构成，但"是谁弃的"要结合谁在行动、谁刚被淘汰、谁刚被科技锁死来猜。</li>
+<li><b>警惕"守株待兔"。</b>你以为在安全星系，但别人可能已经对你发布了打击，只是还没到。</li>
+<li><b>结盟必然破裂。</b>黑暗森林里没有长期盟友，只有还没到清算时刻的临时协议。</li>
+<li><b>光速飞船要提前备好。</b>它只能在被打中之后发动——那一刻再想买就来不及了。10 费很贵，但它是防御链之外唯一的逃生通道。</li>
+</ul>
+</div>
+
+<div class="card">
+<b style="color:var(--cyan)">2 人局怎么变</b>
+<ul>
+<li>只剩一名可能的响应者，广播窗口退化为<b>逐个轮询</b>，无需等待截止期。</li>
+<li>命中即终局：剩余玩家数为 1，打击奖励只有 <b>1 × 3 = 3</b> 点能量，已无后续价值。</li>
+<li>不存在第三方补刀，打击的"飞行时间"只剩目标方补防御、备光速飞船、或游说撤回这几种用法。</li>
+<li>谈判变成纯双人心理战，假坐标更容易被当场戳穿。</li>
+<li>体验从"多方猜疑"变成"双人距离推理"，信息密度更高、变数更少——建议 1 真人 + 1 AI 开局。</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>B 款｜《我的三体：黑暗森林》核心规则</h2>
+<div class="meta">三体宇宙官方授权 · 北京卡卡士多 × Asmodee 艾赐魔袋 · 5 人 · 舰船竞速对抗</div>
+
+<h3>1. 背景与胜利条件</h3>
+<p>取材自动画《我的三体·章北海传》第 8–9 集。末日战役后，5 艘人类战舰逃离太阳系，目标是 18 光年外的类地行星 <b>NH558J2</b>。水滴还在追杀。</p>
+<ul>
+<li><b>胜利：</b>第一个到达终点，<b>或</b>成为唯一存活者。</li>
+<li><b>失败：</b>战舰被摧毁（设备全毁）或被水滴击中。</li>
+<li>类型：<b>半合作竞速对抗</b>——规则允许结盟，也允许终局前反戈一击。</li>
+</ul>
+
+<h3>2. 开局准备</h3>
+<ol>
+<li>选择自己的战舰摆在起点（自然选择号、蓝色空间号等，可扮演章北海、东方延绪、褚岩等角色）。</li>
+<li>准备驱动骰。</li>
+<li>摆放水滴模型和资源地带物资。</li>
+<li>抽取 10 张物资卡，选择战舰面板，按<b>科技值</b>要求布置战舰。</li>
+<li>每人抽取 <b>5 张策略卡</b>。</li>
+</ol>
+
+<h3>3. 回合流程（五阶段）</h3>
+<div class="flow">
+  <div class="step"><b>① 驱动</b><span>投掷"玩家人数+1"颗驱动骰，选一枚按点数前进</span></div>
+  <div class="step"><b>② 触发</b><span>按停留格子的 颜色→图标→空雷 依次结算</span></div>
+  <div class="step"><b>③ 部署</b><span>研发物资、装备战舰、启动移动设备</span></div>
+  <div class="step"><b>④ 战斗</b><span>进入 20 格后可攻击他人</span></div>
+  <div class="step"><b>⑤ 水滴</b><span>投骰移动水滴，直线穿透摧毁</span></div>
+</div>
+
+<p><b>触发阶段细节：</b></p>
+<table>
+<tr><th style="width:18%">格子类型</th><th>效果</th></tr>
+<tr><td><b>绿色（资源地带）</b></td><td>抽 1 张物资卡；<b>首次</b>到达额外多抽 1 张</td></tr>
+<tr><td><b>蓝色（四维碎片）</b></td><td>停留在此时<b>不会受到水滴伤害</b></td></tr>
+<tr><td><b>"?" 图标</b></td><td>选一张策略卡打出并执行效果</td></tr>
+<tr><td><b>钻石图标</b></td><td>抽 1 张物资卡</td></tr>
+<tr><td><b>科学图标</b></td><td>不消耗物资，立刻完成一次研发</td></tr>
+<tr><td><b>空雷</b></td><td>立刻受到太空地雷伤害并进行判定</td></tr>
+</table>
+
+<p><b>战斗阶段：</b></p>
+<ul>
+<li>进入第 <b>20 格以后</b>才能用已装备的武器攻击其他同样过线玩家。</li>
+<li>被攻击方投<b>判定骰</b>防御，<b>武器攻击点数 = 需投骰次数</b>；<b>4 点以上为防御成功</b>，每次投出小于 4 点承受 <b>1 点伤害</b>。</li>
+<li>每受 1 点伤害，需丢弃一个已装备设备（顺序：<b>先装甲区，再设备舱</b>）。</li>
+<li><b>设备全毁 = 战舰毁坏 = 出局。</b></li>
+<li>所有物资都可<b>背面朝上</b>放在装甲区当普通装甲使用（不发挥原效果）。</li>
+</ul>
+
+<div class="warn">
+<b>水滴机制（本作最大压迫感来源）：</b><br>
+当最后一位玩家越过 20 格后，每次行动结束都必须投掷水滴驱动骰并移动水滴。在<b>水滴当前位置与目标位置之间划一条直线，线段穿过的所有格子上的战舰将被直接摧毁</b>——一击毙命，无防御骰。处在特殊位置或装备特殊人物时可免疫。<br>
+这就是"末位优先行动"机制的恐怖之处：跑得慢的人先动，但也更容易被水滴的直线扫到。
+</div>
+
+<p><b>行动顺序：</b>第一回合由年龄最小的玩家先动；之后<b>由当前处于最后位置的玩家先行动</b>，其余由后到前依次进行；同位置则投骰，点数大者先动。</p>
+
+<div class="tip"><b>进阶：剧情模式。</b>熟悉基础规则后可加入角色系统，增加代入感与角色能力差异。</div>
+
+<hr>
+
+<h2>两款横向对比</h2>
+<table>
+<tr><th style="width:20%">维度</th><th>A｜《三体 黑暗森林·桌游》</th><th>B｜《我的三体：黑暗森林》</th></tr>
+<tr><td>核心机制</td><td>隐藏坐标 + 卡牌博弈（双盲）</td><td>骰子驱动 + 舰船竞速</td></tr>
+<tr><td>IP 贴合点</td><td>黑暗森林法则、猜疑链、清理</td><td>末日之战、黑暗战役、水滴</td></tr>
+<tr><td>人数 / 时长</td><td>2–9 人 / 偏长</td><td>5 人 / 中等</td></tr>
+<tr><td>上手难度</td><td>较高，需理解距离与信息推演</td><td>低，几分钟可开玩</td></tr>
+<tr><td>随机性</td><td>较低（抽牌为主，重策略）</td><td>较高（大量投骰，含运气成分）</td></tr>
+<tr><td>玩家互动</td><td>谈判、试探、心理博弈</td><td>结盟、偷袭、竞速对抗</td></tr>
+<tr><td>主要短板</td><td>早期出局者坐冷板凳；配件做工一般</td><td>玩法原创度一般，偏"主题换皮"</td></tr>
+<tr><td>适合谁</td><td>喜欢狼人杀/推理博弈的三体粉</td><td>家庭聚会、轻策略、带新手</td></tr>
+</table>
+
+<footer>
+资料整理自公开规则说明书、玩家实测与媒体评测。<b>A 款全部 19 种卡牌的能量、等级与效果描述已由实物扫描图确认</b>（详见<a href="三体黑暗森林卡牌图鉴/index.html" style="color:var(--cyan)">卡牌图鉴</a>），不同批次印刷可能存在微调。<br>
+"藏好自己，做好清理。" ——《三体II·黑暗森林》
+</footer>
+
+</div>
+</body>
+</html>
