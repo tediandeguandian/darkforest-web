@@ -1322,6 +1322,8 @@ button:focus-visible,input:focus-visible,summary:focus-visible,[tabindex]:focus-
 /* ---------- 9. 弹窗：遮罩淡入 + 面板浮起 ---------- */
 .dlg-mask,.modal-mask,.settings-mask,.stack-modal-mask{animation:maskIn var(--dur-2) var(--ease-out) both}
 .dlg,.modal,.settings,.stack-modal{animation:panelIn var(--dur-3) var(--ease-out) both}
+/* 弹窗开着的时候只换内容、不重播入场动画：否则广播等待中每推一次状态就闪一下 */
+.modal-root.no-anim .modal-mask,.modal-root.no-anim .modal{animation:none!important}
 
 /* 换人提示：自己回合那张再带一圈呼吸光，提醒"该你了" */
 .turn-gate.mine .tg-card{animation:tgPop 420ms var(--ease-out) both,tgGlow 1.8s 420ms var(--ease-io) infinite}
