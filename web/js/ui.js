@@ -16,6 +16,21 @@ const UI = {
   strikeReveal: null,  // { text, sub, until }：落地瞬间的落点横幅
   turnKey: null,       // 当前回合标识（turnIndex + 当前玩家），用于检测换人
   gate: null,          // 换人时的 3 秒提示 { name, mine, until }
+
+  /* ---- 动效用的比对游标 ----
+     renderGame() 每次操作都重建整块 DOM，纯 CSS 动画会跟着每次重绘重播
+     （选一张牌，整手牌都重新"发"一遍）。所以这里记住上一帧看到了什么，
+     只在"多出来的那部分"上打标记，让动画只播一次。 */
+  scene: null,         // 'entry' | 'lobby' | 'game'：场景切换时才播入场
+  logOpen: false,      // 战报抽屉是否展开（重绘时要恢复）
+  seenHand: null,      // Set(uid)：已见过的牌，用于判断哪张是刚摸到的
+  prevSel: null,       // Set(uid)：上一帧选中的牌，用于区分"选中"和"取消选中"
+  discardSig: undefined, // 弃牌堆的 uid 串，变了才让新的一摞落下
+  dimmedSet: null,     // Set(galaxy)：上一帧已被降维的星系
+  logTop: null,        // 上一帧最新一条战报的标识
+  calloutHTML: null,   // 上一帧中央提示的内容，变了才播换字动画
+  seatSet: null,       // Set(pid)：大厅里已出现过的席位
+  deckCount: null,     // 上一帧牌库数，变了让数字跳一下
 };
 
 const $ = s => document.querySelector(s);
@@ -46,7 +61,7 @@ const GEAR = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke
  * 只调其中一个都不像毛玻璃：只降透明度会花，只加模糊会糊成一块。
  * ============================================================ */
 const UI_PREF_KEY = 'df_ui_pref';
-const UI_PREF_DEFAULT = { frost: true, level: 0 };
+const UI_PREF_DEFAULT = { frost: true, level: 0, motion: true };
 
 function loadUiPref() {
   try {
@@ -57,6 +72,7 @@ function loadUiPref() {
     return {
       frost: o.frost !== false,
       level: Number.isFinite(lv) ? Math.min(1, Math.max(0, lv)) : UI_PREF_DEFAULT.level,
+      motion: o.motion !== false,
     };
   } catch (e) {
     return { ...UI_PREF_DEFAULT };   // 隐私模式 / 存储被禁：退回默认，不报错
@@ -72,6 +88,7 @@ function applyUiPref(pref) {
   if (typeof document === 'undefined' || !document.body) return;
   const b = document.body;
   b.classList.toggle('frost', !!pref.frost);
+  b.classList.toggle('no-motion', pref.motion === false);   // 关掉动效：退化成瞬间完成
   if (!pref.frost) return;                      // 关掉就走实色面板，变量留着下次用
   const lv = pref.level;
   // 面板不透明度 0.40 → 0.95。区间给足，否则牌桌上的变化看不出来
@@ -99,6 +116,11 @@ function openPrefModal() {
           <button class="switch${pref.frost ? ' on' : ''}" id="prefFrost" role="switch"
             aria-checked="${pref.frost}" title="毛玻璃"></button>
         </div>
+        <div class="pref-row">
+          <span class="pr-txt">动效<span>面板、牌面与提示的过渡；关掉更快</span></span>
+          <button class="switch${pref.motion !== false ? ' on' : ''}" id="prefMotion" role="switch"
+            aria-checked="${pref.motion !== false}" title="动效"></button>
+        </div>
         <div class="pref-row"><span class="pr-txt">浓度<span>越高越不透明，也越糊</span></span></div>
         <div class="range-wrap">
           <input type="range" id="prefLevel" min="0" max="100" step="1"
@@ -111,7 +133,7 @@ function openPrefModal() {
     </div>`;
   document.body.appendChild(box);
 
-  const close = () => box.remove();
+  const close = () => fxExit(box);
   box.addEventListener('click', e => { if (e.target === box) close(); });
   box.querySelector('#prefClose').addEventListener('click', close);
   document.addEventListener('keydown', function esc3(e) {
@@ -119,6 +141,7 @@ function openPrefModal() {
   });
 
   const sw = box.querySelector('#prefFrost');
+  const mo = box.querySelector('#prefMotion');
   const range = box.querySelector('#prefLevel');
   const val = box.querySelector('#prefVal');
 
@@ -129,6 +152,14 @@ function openPrefModal() {
     range.disabled = !pref.frost;
     val.textContent = pref.frost ? Math.round(pref.level * 100) + '%' : '关';
     applyUiPref(pref);
+    saveUiPref(pref);
+  });
+
+  mo.addEventListener('click', () => {
+    pref.motion = pref.motion === false;
+    mo.classList.toggle('on', pref.motion);
+    mo.setAttribute('aria-checked', String(pref.motion));
+    applyUiPref(pref);       // 立刻生效：关掉时正在播的动画会被压成 1ms
     saveUiPref(pref);
   });
 
@@ -333,7 +364,7 @@ function openDownloadDialog(list) {
       <div class="dlg-foot"><button class="btn ghost" data-close>关闭</button></div>
     </div>`;
   document.body.appendChild(box);
-  const close = () => box.remove();
+  const close = () => fxExit(box, '.dlg');
   box.addEventListener('click', e => { if (e.target === box) close(); });
   box.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
   document.addEventListener('keydown', function esc4(e) {
@@ -365,6 +396,47 @@ function compareVer(a, b) {
 }
 
 /* ============================================================
+ * 动效小工具
+ * ============================================================ */
+
+/* 退场：能播就播 150ms 再删，不能播就当场删。
+   ⚠️ 不能无条件延迟删除——jsdom（UI 冒烟测试）没有 Element.animate，
+   测试点完按钮就会断言节点没了，延迟删会全红。所以先探一下能力再说。 */
+function fxExit(node, panelSel) {
+  if (!node) return;
+  const done = () => node.remove();
+  if (typeof node.animate !== 'function') return done();
+  const ease = 'cubic-bezier(.4,0,1,1)';
+  node.style.pointerEvents = 'none';        // 淡出期间别再挡住底下的点击
+  try {
+    node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: ease });
+    const panel = panelSel ? node.querySelector(panelSel) : null;
+    if (panel) panel.animate(
+      [{ transform: 'none', opacity: 1 }, { transform: 'translateY(6px) scale(.985)', opacity: 0 }],
+      { duration: 150, easing: ease });
+  } catch (e) { /* 动画失败不该拦住关闭 */ }
+  setTimeout(done, 165);                    // 兜底：动画被系统跳过时也要收尸
+}
+
+/* 弹窗内容没变就别重写 DOM——否则每个状态推送都会把入场动画重播一遍，
+   等待别人回应时那层遮罩会一直"浮上来"。返回 true 表示这次真的写了。 */
+function paintModal(root, html) {
+  if (root.__dfHtml === html) return false;
+  root.__dfHtml = html;
+  root.innerHTML = html;
+  return true;
+}
+
+/* 数值变动时跳一下：能量、牌库数都走这里 */
+function bump(node, up) {
+  if (!node || !node.classList) return;
+  node.classList.remove('e-bump', 'e-up', 'e-down');
+  void node.offsetWidth;                    // 强制回流，同名 class 才会重新触发
+  node.classList.add('e-bump', up ? 'e-up' : 'e-down');
+  setTimeout(() => node.classList.remove('e-bump', 'e-up', 'e-down'), 720);
+}
+
+/* ============================================================
  * 通用对话框：应用内弹窗，不用 alert/confirm
  * （原生弹窗在 WebView 里长得像系统警告，而且不能换样式；
  *  这里统一用一块 .dlg，标题 + 正文 HTML + 取消/确定两个按钮）
@@ -390,7 +462,7 @@ function openDialog(opts) {
   document.body.appendChild(mask);
 
   const close = () => {
-    mask.remove();
+    fxExit(mask, '.dlg');
     document.removeEventListener('keydown', onKey);
   };
   const onKey = e => { if (e.key === 'Escape') close(); };
@@ -527,8 +599,9 @@ function renderLobby() {
   const modeName = room.mode === 'fast' ? '快速' : '标准';
   const targetName = room.strikeTarget === 'hidden' ? '目标隐藏' : '目标公开';
 
+  const seenSeats = UI.seatSet;
   const seats = room.seats.map((s, i) => `
-    <div class="seat${s.isAI ? ' ai' : ''}">
+    <div class="seat${s.isAI ? ' ai' : ''}${seenSeats && !seenSeats.has(s.playerId) ? ' is-new' : ''}">
       <span class="seat-name"><span class="dot ${s.connected ? '' : 'off'}"></span>${esc(s.name)}
         ${s.playerId === Net.me?.playerId ? '<span class="badge-you">你</span>' : ''}
         ${s.isAI ? `<span class="badge ai">对手 · ${esc(lvName(s.aiLevel))}</span>` : ''}</span>
@@ -537,6 +610,7 @@ function renderLobby() {
         ${(isHost && s.isAI) ? `<button class="mini-x" data-remove="${s.playerId}" title="移除这位对手">×</button>` : ''}
       </span>
     </div>`).join('') || '<div class="dim small" style="padding:12px">还没有其他玩家</div>';
+  UI.seatSet = new Set(room.seats.map(s => s.playerId));
 
   $('#app').innerHTML = `
     <div class="lobby lobby-room">
@@ -623,7 +697,7 @@ function openSettings() {
   box.id = 'settingsModal';
   box.className = 'settings-mask';
   const close = () => {
-    box.remove();
+    fxExit(box, '.settings');
     document.removeEventListener('keydown', onKey);
   };
   const onKey = e => { if (e.key === 'Escape') close(); };
@@ -748,7 +822,7 @@ function renderGame() {
       <div class="hand" id="hand"></div>
     </footer>
 
-    <div class="log-drawer" id="logDrawer">
+    <div class="log-drawer${UI.logOpen ? ' open' : ''}" id="logDrawer">
       <div class="log-head">战报 <button class="mini-x" id="logClose">×</button></div>
       <div class="log-list" id="log"></div>
     </div>
@@ -786,8 +860,16 @@ function renderGame() {
     });
   });
   $('#prefBtnGame').addEventListener('click', openPrefModal);
-  $('#logBtn').addEventListener('click', () => $('#logDrawer').classList.toggle('open'));
-  $('#logClose').addEventListener('click', () => $('#logDrawer').classList.remove('open'));
+  /* 战报抽屉开着的时候会被下一次重绘拆掉（renderGame 整块换 DOM），
+     所以"开着"这个状态存在 UI 里，重绘时按它恢复——否则 AI 每动一步抽屉就自己关上。 */
+  $('#logBtn').addEventListener('click', () => {
+    UI.logOpen = !UI.logOpen;
+    $('#logDrawer').classList.toggle('open', UI.logOpen);
+  });
+  $('#logClose').addEventListener('click', () => {
+    UI.logOpen = false;
+    $('#logDrawer').classList.remove('open');
+  });
 
   requestAnimationFrame(drawArrow);
   requestAnimationFrame(() => handleEnergyEvents(v));
@@ -850,6 +932,8 @@ function handleEnergyEvents(v) {
     const n = stack[e.actor] || 0;
     stack[e.actor] = n + 1;
 
+    bump(anchor, e.delta > 0);   // 数字本身也跳一下，光飘字容易错过
+
     const node = document.createElement('div');
     node.className = 'e-float ' + (e.delta > 0 ? 'gain' : 'loss');
     node.textContent = (e.delta > 0 ? '+' : '−') + Math.abs(e.delta);
@@ -879,7 +963,10 @@ const ABBR = {
    摊在明面上，牌库一下变成透明的——现在只报一个总数，
    想知道某张牌还剩几张，自己去数弃牌堆和场上的牌。 */
 function renderCounter(v) {
-  $('#counterBar').innerHTML = `<span class="cnt-deck">牌库 <b>${v.deckCount}</b></span>`;
+  const prev = UI.deckCount;
+  $('#counterBar').innerHTML = `<span class="cnt-deck">牌库 <b id="deckNum">${v.deckCount}</b></span>`;
+  UI.deckCount = v.deckCount;
+  if (prev != null && prev !== v.deckCount) bump($('#deckNum'), v.deckCount > prev);
 }
 
 /* ---------- 两侧对手 ---------- */
@@ -988,7 +1075,7 @@ function openPlayerModal(p, v) {
     </div>`;
   document.body.appendChild(box);
 
-  const close = () => box.remove();
+  const close = () => fxExit(box, '.stack-modal');
   box.addEventListener('click', e => { if (e.target === box) close(); });
   box.querySelector('#pmClose').addEventListener('click', close);
   document.addEventListener('keydown', function esc2(e) {
@@ -1019,6 +1106,13 @@ function renderMap(v) {
     (flightBy[s.targetGalaxy] = flightBy[s.targetGalaxy] || []).push(s);
   }));
 
+  /* 这一帧才被降维的星系：让它的边框从烧红褪成死灰。
+     第一次渲染不播（一开局全是"新的"，整张图会一起红一下）。 */
+  const dimmedNow = new Set([1,2,3,4,5,6,7,8,9].filter(g => v.markers[g].red));
+  const justDimmed = new Set();
+  if (UI.dimmedSet) dimmedNow.forEach(g => { if (!UI.dimmedSet.has(g)) justDimmed.add(g); });
+  UI.dimmedSet = dimmedNow;
+
   let svg = `<svg viewBox="0 0 ${W} ${H}" class="starmap">`;
   const drawn = new Set();
   for (const [a, list] of Object.entries(ADJACENCY)) {
@@ -1039,7 +1133,7 @@ function renderMap(v) {
     const incoming = flightBy[g] || [];
     const cls = ['node', isTarget ? 'target' : '', isMine ? 'occupied' : '',
                  canPick ? '' : 'far', incoming.length ? 'under-strike' : '',
-                 m.red ? 'dimmed' : ''].join(' ');   // 降维打击后的星系：文字置灰
+                 m.red ? 'dimmed' : '', justDimmed.has(g) ? 'just-dimmed' : ''].join(' ');   // 降维打击后的星系：文字置灰
     svg += `<g class="${cls}" data-g="${g}">`;
     svg += `<circle cx="${x}" cy="${y}" r="33" class="node-bg"/>`;
     svg += `<text x="${x}" y="${y - 5}" class="node-num">${g}</text>`;
@@ -1094,74 +1188,72 @@ function renderMap(v) {
   }
 }
 
-/* ---------- 中央大字提示 ---------- */
+/* ---------- 中央大字提示 ----------
+   内容是"算出来"再一次性写进去的：这样能拿上一帧的内容做比对，
+   只有字真的换了才播一次换字动画——同一个状态被反复重绘时不会一直闪。 */
 function renderCallout(v) {
   const box = $('#callout');
   if (!box) return;
+  let cls = 'callout';
+  let html = '';
 
-  // 隐藏目标模式：打击落地/落空的那一下，把落点公开亮出来（约 5 秒）
   if (UI.strikeReveal && Date.now() < UI.strikeReveal.until) {
-    box.className = 'callout reveal show';
-    box.innerHTML = `<div class="co-main">${esc(UI.strikeReveal.text)}</div>
+    // 隐藏目标模式：打击落地/落空的那一下，把落点公开亮出来（约 5 秒）
+    cls = 'callout reveal show';
+    html = `<div class="co-main">${esc(UI.strikeReveal.text)}</div>
       <div class="co-sub">${esc(UI.strikeReveal.sub)}</div>`;
-    return;
+  } else {
+    const me = v.players.find(p => p.id === v.me.id);
+    const flight = [];
+    v.players.forEach(p => (p.strikes || []).forEach(s => flight.push(s)));
+    const known = flight.filter(s => s.targetGalaxy != null);
+    const blind = flight.filter(s => s.targetGalaxy == null);
+
+    const toMe = known.filter(s => s.targetGalaxy === me.galaxy)
+      .sort((a, b) => (b.progress || 0) - (a.progress || 0))[0];
+
+    if (toMe) {
+      // 被打的人也不知道还有几手到——这正是"黑暗森林"该有的压迫感。
+      // 注意 required（要飞几手）只有发起者知道，别人的打击这里拿不到，
+      // 早先误用 progress 判断导致显示成"还需 0 手到达"。
+      const isKnown = toMe.required != null;
+      const left = isKnown ? Math.max(0, toMe.required - toMe.progress) : null;
+      cls = 'callout danger show';
+      html = `<div class="co-main">⚠ ${CARD_DEFS[toMe.key].short} 正在飞向你的星系</div>
+        <div class="co-sub">已飞 ${toMe.progress} 手 · ${isKnown ? `还需 ${left} 手到达` : '还需 ? 手到达'} · ${esc(galLabel(me.galaxy))}</div>`;
+    } else if (v.escape) {
+      const who = v.players.find(p => p.id === (v.escape.mine ? v.me.id : v.escape.targetId));
+      cls = 'callout danger show';
+      html = v.escape.mine
+        ? `<div class="co-main">⚠ 打击命中——是否启动光速飞船？</div>
+           <div class="co-sub">这是你唯一的脱身机会</div>`
+        : `<div class="co-main">${esc(who ? who.name : '有玩家')} 正在决定是否启动光速飞船</div>
+           <div class="co-sub">等待其选择</div>`;
+    } else if (v.broadcast) {
+      const caster = v.players.find(p => p.id === v.broadcast.casterId);
+      cls = 'callout show';
+      html = `<div class="co-main">广播 → ${esc(galLabel(v.broadcast.targetGalaxy))}</div>
+        <div class="co-sub">${esc(caster ? caster.name : '')} 发布 · 等待回应</div>`;
+    } else if (blind.length) {
+      // 隐藏目标：只知道"天上还有几枚东西在飞"，不知道飞向哪儿
+      const labels = blind.slice(0, 3).map(s => `${CARD_DEFS[s.key].short} 已${s.progress}手`).join(' · ');
+      cls = 'callout show blind';
+      html = `<div class="co-main">在飞打击 ${blind.length} 枚 · 目标不明</div>
+        <div class="co-sub">${esc(labels)}${blind.length > 3 ? ' …' : ''}</div>`;
+    } else if (known.length) {
+      const s = known.sort((a, b) => (b.progress || 0) - (a.progress || 0))[0];
+      const isKnown = s.mine || s.progress != null;
+      const left = isKnown ? Math.max(0, s.required - s.progress) : null;
+      cls = 'callout show';
+      html = `<div class="co-main">${esc(CARD_DEFS[s.key].short)} → ${esc(galLabel(s.targetGalaxy))}</div>
+        <div class="co-sub">已飞 ${s.progress} 手${isKnown ? ` · 还需 ${left} 手` : ' · 到达时间未知'}</div>`;
+    }
   }
 
-  const me = v.players.find(p => p.id === v.me.id);
-  const flight = [];
-  v.players.forEach(p => (p.strikes || []).forEach(s => flight.push(s)));
-  const known = flight.filter(s => s.targetGalaxy != null);
-  const blind = flight.filter(s => s.targetGalaxy == null);
-
-  const toMe = known.filter(s => s.targetGalaxy === me.galaxy)
-    .sort((a, b) => (b.progress || 0) - (a.progress || 0))[0];
-
-  if (toMe) {
-    // 被打的人也不知道还有几手到——这正是"黑暗森林"该有的压迫感。
-    // 注意 required（要飞几手）只有发起者知道，别人的打击这里拿不到，
-    // 早先误用 progress 判断导致显示成"还需 0 手到达"。
-    const isKnown = toMe.required != null;
-    const left = isKnown ? Math.max(0, toMe.required - toMe.progress) : null;
-    box.className = 'callout danger show';
-    box.innerHTML = `<div class="co-main">⚠ ${CARD_DEFS[toMe.key].short} 正在飞向你的星系</div>
-      <div class="co-sub">已飞 ${toMe.progress} 手 · ${isKnown ? `还需 ${left} 手到达` : '还需 ? 手到达'} · ${esc(galLabel(me.galaxy))}</div>`;
-    return;
-  }
-  if (v.escape) {
-    const who = v.players.find(p => p.id === (v.escape.mine ? v.me.id : v.escape.targetId));
-    box.className = 'callout danger show';
-    box.innerHTML = v.escape.mine
-      ? `<div class="co-main">⚠ 打击命中——是否启动光速飞船？</div>
-         <div class="co-sub">这是你唯一的脱身机会</div>`
-      : `<div class="co-main">${esc(who ? who.name : '有玩家')} 正在决定是否启动光速飞船</div>
-         <div class="co-sub">等待其选择</div>`;
-    return;
-  }
-  if (v.broadcast) {    const caster = v.players.find(p => p.id === v.broadcast.casterId);
-    box.className = 'callout show';
-    box.innerHTML = `<div class="co-main">广播 → ${esc(galLabel(v.broadcast.targetGalaxy))}</div>
-      <div class="co-sub">${esc(caster ? caster.name : '')} 发布 · 等待回应</div>`;
-    return;
-  }
-  // 隐藏目标：只知道"天上还有几枚东西在飞"，不知道飞向哪儿
-  if (blind.length) {
-    const labels = blind.slice(0, 3).map(s => `${CARD_DEFS[s.key].short} 已${s.progress}手`).join(' · ');
-    box.className = 'callout show blind';
-    box.innerHTML = `<div class="co-main">在飞打击 ${blind.length} 枚 · 目标不明</div>
-      <div class="co-sub">${esc(labels)}${blind.length > 3 ? ' …' : ''}</div>`;
-    return;
-  }
-  if (known.length) {
-    const s = known.sort((a, b) => (b.progress || 0) - (a.progress || 0))[0];
-    const isKnown = s.mine || s.progress != null;
-    const left = isKnown ? Math.max(0, s.required - s.progress) : null;
-    box.className = 'callout show';
-    box.innerHTML = `<div class="co-main">${esc(CARD_DEFS[s.key].short)} → ${esc(galLabel(s.targetGalaxy))}</div>
-      <div class="co-sub">已飞 ${s.progress} 手${isKnown ? ` · 还需 ${left} 手` : ' · 到达时间未知'}</div>`;
-    return;
-  }
-  box.className = 'callout';
-  box.innerHTML = '';
+  const changed = UI.calloutHTML !== null && UI.calloutHTML !== html;
+  UI.calloutHTML = html;
+  box.className = cls + (changed ? ' swap' : '');
+  box.innerHTML = html;
 }
 
 /* ---------- 打击落地播报（仅在隐藏目标模式下需要） ---------- */
@@ -1198,6 +1290,16 @@ function renderDiscard(v) {
   const wrap = $('#discard');
   const arrow = v.arrow;
   const alive = arrow && (Date.now() - arrow.at < 15000);
+
+  /* 弃牌堆只在"真的又打出了牌"时让最新一摞落下。
+     首次渲染不动（整块牌桌已经有场景入场了，再来一层就是叠特效）。
+     最新的一摞可能在"本回合"也可能在"上一回合"——刚结束回合时
+     rules.js 已经把 current 滚进 last 了，所以要按 batch 号认，不能按区认。 */
+  const allDiscards = v.discard.current.concat(v.discard.last);
+  const sig = allDiscards.map(d => d.uid).join('|');
+  const freshBatch = UI.discardSig !== undefined && sig !== UI.discardSig;
+  UI.discardSig = sig;
+  const newestBatch = allDiscards.reduce((m, d) => Math.max(m, d.batch || 0), -1);
 
   const chip = (d, zone, i, total) => {
     const def = CARD_DEFS[d.key];
@@ -1237,7 +1339,8 @@ function renderDiscard(v) {
     const groups = batches(arr);
     if (!groups.length) return '<span class="dim small">空</span>';
     return groups.map((g, gi) => {
-      const cls = ['dstack', gi === 0 ? 'fresh' : 'old', g.items.length > 1 ? 'multi' : ''].filter(Boolean).join(' ');
+      const cls = ['dstack', gi === 0 ? 'fresh' : 'old', g.items.length > 1 ? 'multi' : '',
+                   gi === 0 && freshBatch && g.batch === newestBatch ? 'is-new' : ''].filter(Boolean).join(' ');
       return `<div class="${cls}" data-count="${g.items.length}" data-zone="${zone}" data-batch="${g.batch}">${
         g.items.map((d, i) => chip(d, zone, i, g.items.length)).join('')}</div>`;
     }).join('');
@@ -1293,7 +1396,7 @@ function openStackModal(items, zone) {
       </div>
     </div>`;
   document.body.appendChild(box);
-  const close = () => box.remove();
+  const close = () => fxExit(box, '.stack-modal');
   box.addEventListener('click', e => { if (e.target === box) close(); });
   box.querySelector('#smClose').addEventListener('click', close);
   document.addEventListener('keydown', function esc(e) {
@@ -1325,6 +1428,8 @@ function renderHand(v) {
 
   /* 手牌：平铺一行 */
   const hand = me.hand || [];
+  const seen = UI.seenHand || (UI.seenHand = new Set());
+  const prevSel = UI.prevSel || new Set();
   $('#hand').innerHTML = hand.map((c, i) => {
     const def = CARD_DEFS[c.key];
     const f = cardFacts(c.key);
@@ -1332,9 +1437,12 @@ function renderHand(v) {
     const reserved = !!def.escape;   // 光速飞船：留着保命，不能主动打出
     const typeLabel = reserved ? '应急' : def.type === 'broadcast' ? '广播' : def.type === 'strike' ? '打击' : '建设';
     const glyph = def.type === 'broadcast' ? '广' : def.type === 'strike' ? '击' : '建';
-    return `<div class="pcard ${def.type}${sel ? ' selected' : ''}${me.energy >= def.cost ? '' : ' poor'}${reserved ? ' reserved' : ''}"
+    // 只给"这一帧才出现的状态"打标记，重绘不会把动画重播一遍
+    const fresh = !seen.has(c.uid);
+    const fx = fresh ? ' deal' : (sel && !prevSel.has(c.uid) ? ' rise' : (!sel && prevSel.has(c.uid) ? ' fall' : ''));
+    return `<div class="pcard ${def.type}${sel ? ' selected' : ''}${me.energy >= def.cost ? '' : ' poor'}${reserved ? ' reserved' : ''}${fx}"
         data-uid="${c.uid}" title="${esc(def.name)}｜⚡${def.cost}｜${esc(f.main)}｜${esc(f.sub)}｜${esc(def.desc)}"
-        style="z-index:${i + 1}">
+        style="z-index:${i + 1};--d:${i}">
       <span class="pc-glyph">${glyph}</span>
       <div class="pc-top"><span class="pc-cost">⚡${def.cost}</span><span class="pc-type">${typeLabel}</span></div>
       <div class="pc-name">${esc(def.name)}</div>
@@ -1344,6 +1452,24 @@ function renderHand(v) {
       </div>
     </div>`;
   }).join('') || '<div class="dim small" style="padding:16px">手里没有牌</div>';
+  UI.prevSel = new Set(UI.selected);
+
+  /* 「见过这张牌了」要等这一帧画完再落盘。
+     开局 Net.start() 会在同一个任务里连发 state + lobby 两次 render，
+     若立刻落盘，第二次就把刚发出去的牌当成旧牌，发牌动画还没画出来就被抹掉。
+     rAF 之后才提交，同一帧里的连续重绘就都还认得出"这是新的"。 */
+  if (!UI.seenScheduled) {
+    const commit = () => {
+      if (!UI.seenScheduled) return;
+      UI.seenScheduled = false;
+      (UI.pendingSeen || []).forEach(u => seen.add(u));
+      UI.pendingSeen = [];
+    };
+    UI.seenScheduled = true;
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(commit);
+    setTimeout(commit, 80);          // 后台标签页里 rAF 会被挂起，兜一下
+  }
+  (UI.pendingSeen = UI.pendingSeen || []).push(...hand.map(c => c.uid));
 
   /* 斗地主式按钮组：不出 / 提示 / 出牌 */
   const selCards = [...UI.selected].map(u => hand.find(c => c.uid === u)).filter(Boolean);
@@ -1424,8 +1550,24 @@ function renderHand(v) {
 }
 
 function renderLog(v) {
-  $('#log').innerHTML = (v.log || []).map(l =>
-    `<div class="logline ${l.kind}"><span class="lt">T${l.turn}</span>${esc(l.text)}</div>`).join('');
+  const lines = v.log || [];
+  const key = l => `${l.turn}\u0001${l.text}`;
+  /* 战报是"新的插在最前"（rules.js 用 unshift）。拿上一帧最新那条去比对，
+     它前面有几条就是这一帧新增的——只让这几条滑进来。
+     找不到（换局了 / 已经被 60 条上限挤掉）就当全是旧的，不补动画。 */
+  let fresh = 0;
+  if (UI.logTop) {
+    for (let i = 0; i < lines.length && i <= 20; i++) {
+      if (key(lines[i]) === UI.logTop) { fresh = i; break; }
+    }
+  }
+  $('#log').innerHTML = lines.map((l, i) => {
+    const isNew = i < fresh;
+    const d = isNew ? ` style="--d:${Math.min(i, 4)}"` : '';
+    return `<div class="logline ${l.kind}${isNew ? ' is-new' : ''}"${d}>` +
+      `<span class="lt">T${l.turn}</span>${esc(l.text)}</div>`;
+  }).join('');
+  UI.logTop = lines.length ? key(lines[0]) : null;
 }
 
 /* ---------- 箭头 ---------- */
@@ -1482,17 +1624,20 @@ function renderBroadcastModal(v) {
     const sub = !w ? '全场无赢家。'
       : heat ? `第 ${v.turnIndex} 回合仍未分胜负，宇宙停止膨胀，能源耗尽——按能量排座次。`
       : '黑暗森林里，活到最后的人从不解释。';
-    root.innerHTML = `<div class="modal-mask"><div class="modal">
+    const html = `<div class="modal-mask"><div class="modal">
       <h2>${title}</h2>
       <p class="dim">${sub}</p>
       <div class="modal-actions"><button class="btn primary" id="againBtn">回到大厅</button></div>
     </div></div>`;
-    $('#againBtn')?.addEventListener('click', () => { Net.leave(); location.reload(); });
+    // 内容没变就不重写 DOM（见 paintModal 的注释），重写会把入场动画又播一遍
+    if (paintModal(root, html)) {
+      $('#againBtn')?.addEventListener('click', () => { Net.leave(); location.reload(); });
+    }
     return;
   }
 
   const B = v.broadcast;
-  if (!B) { root.innerHTML = ''; return; }
+  if (!B) { paintModal(root, ''); return; }
 
   const caster = v.players.find(p => p.id === B.casterId);
   // 发布阶段不显示合作/伪装：只有发布者自己能看见那一面
@@ -1548,18 +1693,20 @@ function renderBroadcastModal(v) {
       note = '你不在可回应范围内。';
     }
 
-    root.innerHTML = `<div class="modal-mask"><div class="modal">
+    const html = `<div class="modal-mask"><div class="modal">
       <h2>广播响应</h2>
       <p class="dim">${esc(caster.name)} 发布了「${esc(cardName)}」，目标星系 <b>${galLabel(B.targetGalaxy)}</b>。
       ${note}</p>
       ${body}
     </div></div>`;
 
-    root.querySelectorAll('.opt[data-uid]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        Net.act({ type: 'respond', uid: btn.dataset.uid || null, face: btn.dataset.face || null });
+    if (paintModal(root, html)) {
+      root.querySelectorAll('.opt[data-uid]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          Net.act({ type: 'respond', uid: btn.dataset.uid || null, face: btn.dataset.face || null });
+        });
       });
-    });
+    }
     return;
   }
 
@@ -1573,20 +1720,22 @@ function renderBroadcastModal(v) {
           <span>${esc(p.name)}</span>
           <span class="dim">已回应 · 面未公开</span></button>`;
       }).join('');
-      root.innerHTML = `<div class="modal-mask"><div class="modal">
+      const html = `<div class="modal-mask"><div class="modal">
         <h2>选择结算对象</h2>
         <p class="dim">多名玩家回应。你挑一名结算，其余人的牌会被弃掉（返还 1 点能量）。</p>${rows}
       </div></div>`;
+      if (paintModal(root, html)) {
         root.querySelectorAll('.choose-row').forEach(btn => {
-        btn.addEventListener('click', () => Net.act({ type: 'choose', targetId: btn.dataset.pid }));
-      });
+          btn.addEventListener('click', () => Net.act({ type: 'choose', targetId: btn.dataset.pid }));
+        });
+      }
     } else {
-      root.innerHTML = `<div class="modal-mask"><div class="modal">
+      paintModal(root, `<div class="modal-mask"><div class="modal">
         <h2>等待结算</h2>
         <p class="dim">${esc(caster.name)} 正在挑选回应者…</p>
         <div class="waiting"><span class="spinner"></span>等待响应…</div>
-      </div></div>`;
-      }
+      </div></div>`);
+    }
   }
 }
 
@@ -1598,7 +1747,7 @@ function renderEscapeModal(v) {
   if (!E || !E.mine) return;      // 别人在决定：只在顶部 callout 提示
 
   const def = CARD_DEFS[E.cardKey];
-  root.innerHTML = `<div class="modal-mask"><div class="modal esc-modal">
+  const html = `<div class="modal-mask"><div class="modal esc-modal">
       <h2 class="esc-title">⚠ 打击命中</h2>
       <p class="dim">你的星系即将被摧毁。你手里有一张「${esc(def.name)}」——</p>
       <ul class="esc-list">
@@ -1613,6 +1762,7 @@ function renderEscapeModal(v) {
       </div>
     </div></div>`;
 
+  if (!paintModal(root, html)) return;
   $('#escGo').addEventListener('click', () => Net.act({ type: 'escape', use: true }));
   $('#escNo').addEventListener('click', () => Net.act({ type: 'escape', use: false }));
 }
@@ -1633,9 +1783,43 @@ function render() {
   // 背景分两种：入口/大厅是"黑暗森林"（松林 + 月光），牌桌上抬头换成星空
   if (typeof document !== 'undefined' && document.body)
     document.body.classList.toggle('in-game', !!Net.view);
+
+  const scene = Net.view ? 'game' : (Net.room ? 'lobby' : 'entry');
+  // 换场景：上一局"看过什么"全部作废，新一局的牌才会重新发一遍
+  if (scene !== UI.scene) resetSceneFx();
+
   if (Net.view) renderGame();
   else if (Net.room) renderLobby();
   else renderEntry();
+
+  markScene(scene);
+}
+
+/* 清掉动效比对游标（只在换场景时调用） */
+function resetSceneFx() {
+  UI.seenHand = null;
+  UI.pendingSeen = null;
+  UI.seenScheduled = false;
+  UI.prevSel = null;
+  UI.discardSig = undefined;
+  UI.dimmedSet = null;
+  UI.logTop = null;
+  UI.calloutHTML = null;
+  UI.seatSet = null;
+  UI.deckCount = null;
+  UI.logOpen = false;
+}
+
+/* 场景入场：入口 → 大厅 → 牌桌各播一次。
+   renderGame() 在对局里会被频繁调用（每次操作、每次 AI 推进），
+   所以必须只在"场景真的换了"时才加这个类，否则牌桌上会一直闪。 */
+function markScene(name) {
+  const app = $('#app');
+  if (!app || UI.scene === name) return;
+  UI.scene = name;
+  app.classList.remove('scene-in');
+  void app.offsetWidth;            // 强制回流，同名 class 才会重新触发动画
+  app.classList.add('scene-in');
 }
 
 Net.on((type, payload) => {

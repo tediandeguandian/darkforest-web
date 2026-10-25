@@ -1157,3 +1157,207 @@ body.frost .modal{
   .settings{padding:15px}
   .set-opts{grid-template-columns:1fr}
 }
+
+/* ============================================================
+ * 动效系统
+ *
+ * 三条规矩，后面所有规则都照这个来：
+ *   1. 只动 transform / opacity / stroke 这类不触发布局的属性，
+ *      不动 width、height、margin、top/left —— 牌桌本来就在重绘，
+ *      再叠一层重排会掉帧。
+ *   2. 只在"状态真的变了"时播一次。renderGame() 每次操作都会重建整块 DOM，
+ *      纯 CSS 的入场动画会跟着每次点击重播（选一张牌整手牌都在飞），
+ *      所以统一由 JS 打标记（.is-new / .deal / .rise / .swap），CSS 只管表演。
+ *   3. 时长收敛成四档（120 / 200 / 320 / 520ms），缓动三种，
+ *      不要各处再写 .15s ease。
+ * ============================================================ */
+:root{
+  --dur-1:120ms;   /* 按下、微反馈 */
+  --dur-2:200ms;   /* 悬停、开关、选中 */
+  --dur-3:320ms;   /* 面板、弹窗、新出现的块 */
+  --dur-4:520ms;   /* 场景切换 */
+  --ease-out:cubic-bezier(.16,.84,.30,1);
+  --ease-in:cubic-bezier(.40,0,1,1);
+  --ease-io:cubic-bezier(.42,0,.58,1);
+}
+
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes riseIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+@keyframes sinkIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+@keyframes maskIn{from{opacity:0}to{opacity:1}}
+@keyframes panelIn{from{opacity:0;transform:translateY(12px) scale(.975)}to{opacity:1;transform:none}}
+@keyframes bannerIn{from{opacity:0;transform:translate(-50%,-10px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes cardDeal{from{opacity:0;transform:translateY(16px) scale(.94)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes cardRise{from{transform:translateY(0)}to{transform:translateY(-16px)}}
+@keyframes cardFall{from{transform:translateY(-16px)}to{transform:translateY(0)}}
+@keyframes chipDrop{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes seatIn{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes logIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+@keyframes coSwap{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes eBump{
+  0%{transform:translateY(0) scale(1)}
+  30%{transform:translateY(-4px) scale(1.18)}
+  62%{transform:translateY(0) scale(1.02)}
+  100%{transform:translateY(0) scale(1)}
+}
+@keyframes targetPulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.42}}
+@keyframes ants{to{stroke-dashoffset:-14}}
+@keyframes dimBang{0%{stroke:#ff6a5c;stroke-width:2.8}100%{stroke:#332a4d;stroke-width:1.4}}
+@keyframes dotRing{0%{transform:scale(.55);opacity:.85}70%{transform:scale(2.2);opacity:0}100%{transform:scale(2.2);opacity:0}}
+@keyframes badgeGlow{
+  0%,100%{box-shadow:0 0 0 2px rgba(242,181,60,.20)}
+  50%{box-shadow:0 0 0 5px rgba(242,181,60,.04)}
+}
+@keyframes tgPop{from{opacity:0;transform:translateY(-10px) scale(.94)}to{opacity:1;transform:none}}
+@keyframes tgGlow{
+  0%,100%{box-shadow:0 0 0 1px rgba(242,181,60,.25),0 0 30px rgba(242,181,60,.05)}
+  50%{box-shadow:0 0 0 1px rgba(242,181,60,.46),0 0 46px rgba(242,181,60,.16)}
+}
+
+/* ---------- 1. 页面加载与场景切换（入口 → 大厅 → 牌桌） ---------- */
+/* 背景图淡入：直接从纯色 html 底色亮起来，比"图啪一下出现"柔和 */
+body::before{animation:fadeIn 800ms var(--ease-out) both}
+
+#app.scene-in .lobby{animation:fadeIn var(--dur-3) var(--ease-out) both}
+/* 入口页的东西少，逐条往上浮，像一张一张发到桌上 */
+#app.scene-in .lobby-entry > *{animation:riseIn 440ms var(--ease-out) both}
+#app.scene-in .lobby-entry > *:nth-child(1){animation-delay:0ms}
+#app.scene-in .lobby-entry > *:nth-child(2){animation-delay:30ms}
+#app.scene-in .lobby-entry > *:nth-child(3){animation-delay:60ms}
+#app.scene-in .lobby-entry > *:nth-child(4){animation-delay:90ms}
+#app.scene-in .lobby-entry > *:nth-child(5){animation-delay:120ms}
+#app.scene-in .lobby-entry > *:nth-child(6){animation-delay:150ms}
+#app.scene-in .lobby-entry > *:nth-child(7){animation-delay:180ms}
+#app.scene-in .lobby-entry > *:nth-child(8){animation-delay:210ms}
+#app.scene-in .lobby-entry > *:nth-child(9){animation-delay:240ms}
+
+/* 牌桌：顶栏从上方落下，主区和手牌从下方浮起，错开一点才有层次 */
+#app.scene-in .hud{animation:sinkIn var(--dur-3) var(--ease-out) both}
+#app.scene-in .board{animation:riseIn var(--dur-4) 20ms var(--ease-out) both}
+#app.scene-in .mybar{animation:riseIn var(--dur-4) 60ms var(--ease-out) both}
+
+/* ---------- 2. 按钮：悬停 / 按下 / 焦点 ---------- */
+/* 统一一套过渡，替掉各处 .15s（all）——只过渡真正会变的几个属性 */
+.btn,.hbtn,.mini-x,.icon-btn,.opt,.choose-row,.set-opt,.mode-btn,.ai-btn,
+.apk-get,.rule-edit,.tc-x,.pill{
+  transition:color var(--dur-2) var(--ease-io),border-color var(--dur-2) var(--ease-io),
+    background-color var(--dur-2) var(--ease-io),box-shadow var(--dur-2) var(--ease-io),
+    filter var(--dur-2) var(--ease-io),transform var(--dur-1) var(--ease-out)
+}
+/* 按下时先"陷"一下：0.985 的缩放比改背景色更像按钮，也不会晃动周围排版 */
+.btn:active:not(:disabled),.hbtn:active,.set-opt:active:not(:disabled),
+.mode-btn:active:not(:disabled),.ai-btn:active:not(:disabled),
+.opt:active:not(:disabled),.choose-row:active,.apk-get:active{transform:translateY(1px) scale(.985)}
+.pill:active:not(:disabled){transform:scale(.955)}
+.mini-x:active{transform:scale(.9)}
+/* 齿轮悬停本来就有 20° 旋转，按下时要在原角度上缩，不能把旋转丢掉 */
+.icon-btn:active{transform:rotate(20deg) scale(.9)}
+.pill:hover:not(:disabled){transform:translateY(-1px)}
+.btn.primary:hover:not(:disabled){box-shadow:0 4px 16px rgba(242,181,60,.10)}
+
+/* 键盘可达性：鼠标点不出来、只有 Tab 走得出来的焦点框 */
+button:focus-visible,input:focus-visible,summary:focus-visible,[tabindex]:focus-visible{
+  outline:2px solid var(--cyan);outline-offset:1px
+}
+.btn:focus-visible,.pill:focus-visible{outline-offset:2px}
+
+/* 设置里的开关与滑杆 */
+.switch:active{transform:scale(.94)}
+.range-wrap input[type=range]::-webkit-slider-thumb{
+  transition:transform var(--dur-1) var(--ease-out),box-shadow var(--dur-1) var(--ease-out)
+}
+.range-wrap input[type=range]::-moz-range-thumb{
+  transition:transform var(--dur-1) var(--ease-out),box-shadow var(--dur-1) var(--ease-out)
+}
+.range-wrap input[type=range]:active::-webkit-slider-thumb{transform:scale(1.18)}
+.range-wrap input[type=range]:active::-moz-range-thumb{transform:scale(1.18)}
+
+/* ---------- 3. 手牌：发牌、选中、取消选中 ---------- */
+.pcard{
+  transition:transform var(--dur-1) var(--ease-out),border-color var(--dur-1) var(--ease-io),
+    box-shadow var(--dur-2) var(--ease-io),opacity var(--dur-2) var(--ease-io)
+}
+/* 抬起来的时候给一点投影，白卡才不会像贴在背景上 */
+.pcard:hover{box-shadow:0 12px 26px rgba(0,0,0,.34)}
+.pcard.selected{box-shadow:inset 0 0 0 2px var(--gold),0 14px 28px rgba(0,0,0,.36)}
+/* 发牌：新摸到的牌错峰落下（--d 由 JS 按位置写进来） */
+.pcard.deal{animation:cardDeal 380ms var(--ease-out) backwards;animation-delay:calc(var(--d,0) * 36ms)}
+.pcard.poor.deal{animation:none}          /* 灰着的牌不参与，否则动画结尾会亮一下又暗回去 */
+/* 选中 / 取消：DOM 是新建的，靠一段从 0 到 -16px 的动画补上"抬起"的过程 */
+.pcard.rise{animation:cardRise var(--dur-2) var(--ease-out)}
+.pcard.fall{animation:cardFall var(--dur-2) var(--ease-out)}
+
+/* ---------- 4. 弃牌堆：新打出的这一摞落下 ---------- */
+.dstack.is-new{animation:chipDrop var(--dur-3) var(--ease-out) both}
+
+/* ---------- 5. 星图：目标呼吸、在飞打击的虚线流动 ---------- */
+.node .node-bg{
+  transition:stroke var(--dur-2) var(--ease-io),fill var(--dur-2) var(--ease-io),
+    filter var(--dur-2) var(--ease-io)
+}
+.node:hover .node-bg{filter:drop-shadow(0 0 7px rgba(87,200,216,.5))}
+/* 选中的目标：框线自己呼吸，比静态金色更抓眼，又不至于一直闪 */
+.node.target .node-bg{animation:targetPulse 1.9s var(--ease-io) infinite}
+/* 有打击在飞：虚线往前走，等于"倒计时在走" */
+.node.under-strike .node-bg{animation:ants 900ms linear infinite}
+/* 刚被降维：边框从烧红褪成死灰 */
+.node.just-dimmed .node-bg{animation:dimBang 900ms var(--ease-out) both}
+
+/* ---------- 6. 状态变化：能量跳字、牌库计数 ---------- */
+.st-e,.me-energy,.cnt-deck b{transition:color var(--dur-2) var(--ease-io)}
+.e-bump{animation:eBump 560ms var(--ease-out)}
+.e-up{color:#7ee0a0}
+.e-down{color:#ff9b96}
+
+/* ---------- 7. 中央提示：换字时轻轻落一下 ---------- */
+.callout.swap .co-main{animation:coSwap 260ms var(--ease-out) both}
+.callout.swap .co-sub{animation:coSwap 260ms 40ms var(--ease-out) both}
+
+/* ---------- 8. 战报 / 大厅席位 ---------- */
+.logline.is-new{animation:logIn 260ms var(--ease-out) both;animation-delay:calc(var(--d,0) * 45ms)}
+.seat.is-new{animation:seatIn var(--dur-3) var(--ease-out) both}
+
+/* ---------- 9. 弹窗：遮罩淡入 + 面板浮起 ---------- */
+.dlg-mask,.modal-mask,.settings-mask,.stack-modal-mask{animation:maskIn var(--dur-2) var(--ease-out) both}
+.dlg,.modal,.settings,.stack-modal{animation:panelIn var(--dur-3) var(--ease-out) both}
+
+/* 换人提示：自己回合那张再带一圈呼吸光，提醒"该你了" */
+.turn-gate.mine .tg-card{animation:tgPop 420ms var(--ease-out) both,tgGlow 1.8s 420ms var(--ease-io) infinite}
+
+/* ---------- 10. 顶栏与散件 ---------- */
+/* 当前回合玩家头像上的小点：一圈渐隐的涟漪，比单纯变色更容易被注意到 */
+.av-dot::after{
+  content:'';position:absolute;inset:-3px;border-radius:50%;pointer-events:none;
+  border:1.5px solid var(--gold);animation:dotRing 1.9s var(--ease-out) infinite
+}
+.ub-dot{animation:badgeGlow 2.2s var(--ease-io) infinite}
+#updateBadge{animation:fadeIn var(--dur-3) var(--ease-out) both}
+/* 断线提示从上方挂下来 */
+.conn.show{animation:bannerIn var(--dur-3) var(--ease-out) both}
+/* 战报抽屉：滑出时带一点投影，压住牌桌 */
+.log-drawer{transition:transform var(--dur-3) var(--ease-out),box-shadow var(--dur-3) var(--ease-out)}
+.log-drawer.open{box-shadow:-18px 0 50px rgba(0,0,0,.45)}
+
+/* toast：轻微放大 + 上浮，比单纯位移更像"弹出来" */
+.toast{transform:translate(-50%,16px) scale(.96);transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-3) var(--ease-out)}
+.toast.show{transform:translate(-50%,0) scale(1)}
+
+/* ============================================================
+ * 11. 减少动效
+ * 系统层（Android 的"移除动画"、iOS 的"减弱动态效果"、macOS 同类设置）
+ * 与本机开关走同一套：几乎瞬完，但保留 transitionend / animationend，
+ * 依赖它们做清理的代码（能量飘字）不会漏删节点。
+ * 转圈的 spinner 是"还在加载"的唯一凭据，不掐。
+ * ============================================================ */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:1ms!important;animation-iteration-count:1!important;
+    transition-duration:1ms!important;scroll-behavior:auto!important
+  }
+  .spinner{animation-duration:.8s!important;animation-iteration-count:infinite!important}
+}
+body.no-motion *,body.no-motion *::before,body.no-motion *::after{
+  animation-duration:1ms!important;animation-iteration-count:1!important;
+  transition-duration:1ms!important;scroll-behavior:auto!important
+}
+body.no-motion .spinner{animation-duration:.8s!important;animation-iteration-count:infinite!important}
