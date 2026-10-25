@@ -32,6 +32,9 @@ const UI = {
   calloutHTML: null,   // 上一帧中央提示的内容，变了才播换字动画
   seatSet: null,       // Set(pid)：大厅里已出现过的席位
   deckCount: null,     // 上一帧牌库数，变了让数字跳一下
+  arrowRaf: 0,         // 箭头层当前挂着的 rAF 句柄（0 = 没有链在跑）
+  arrowHtml: '',       // 上一帧画出来的 SVG，一样就不再写 DOM
+  arrowLayer: null,    // 上一帧的 <svg id="arrowLayer">，换节点时缓存作废
 };
 
 const $ = s => document.querySelector(s);
@@ -504,7 +507,12 @@ function bump(node, up) {
   node.classList.remove('e-bump', 'e-up', 'e-down');
   void node.offsetWidth;                    // 强制回流，同名 class 才会重新触发
   node.classList.add('e-bump', up ? 'e-up' : 'e-down');
-  setTimeout(() => node.classList.remove('e-bump', 'e-up', 'e-down'), 720);
+  /* 连着两次变动（生产 + 建设同帧结算）时，上一次的定时器会把这一次的动画提前掐掉：
+     只让"最后一次"的定时器收尾 */
+  const token = (node.__eBump = (node.__eBump || 0) + 1);
+  setTimeout(() => {
+    if (node.__eBump === token) node.classList.remove('e-bump', 'e-up', 'e-down');
+  }, 720);
 }
 
 /* ============================================================
@@ -939,7 +947,7 @@ function renderGame() {
     $('#logDrawer').classList.remove('open');
   });
 
-  requestAnimationFrame(drawArrow);
+  scheduleArrow();
   requestAnimationFrame(() => handleEnergyEvents(v));
   // 换局/重渲染时回到顶部，避免沿用上一屏的滚动位置
   if (window.scrollY > 0 && window.innerWidth <= 1100) window.scrollTo(0, 0);
@@ -1639,27 +1647,51 @@ function renderLog(v) {
 }
 
 /* ---------- 箭头 ---------- */
+/* 只允许一条 rAF 链。
+   以前是每个调用点都 requestAnimationFrame(drawArrow)，而 drawArrow 结尾又给自己排一帧：
+   一次弃牌（箭头存活 15 秒）+ 5 次状态推送 = 6 条链并行，每帧各自把 #arrowLayer
+   的 innerHTML 整块重写一遍（实测 200ms 里 72 次），CPU 白烧、低端机掉帧。
+   现在：单飞 + 内容不变不写 DOM。 */
+function scheduleArrow() {
+  if (UI.arrowRaf) return;
+  if (typeof requestAnimationFrame !== 'function') return;
+  UI.arrowRaf = requestAnimationFrame(drawArrow);
+}
+
+function paintArrow(layer, html) {
+  // renderGame 整块重写 #app，<svg id="arrowLayer"> 会换成新节点：
+  // 缓存必须跟着失效，否则新节点被当成"内容没变"，箭头就画不出来了
+  if (layer !== UI.arrowLayer) { UI.arrowLayer = layer; UI.arrowHtml = ''; }
+  if (html === UI.arrowHtml) return;
+  UI.arrowHtml = html;
+  layer.innerHTML = html;
+}
+
 function drawArrow() {
+  // 可能是被排到的那一帧调起来的，也可能是手动调的；先把在排队的那帧撤掉，
+  // 免得"手动一次 + 递归一次"又变成两条链
+  if (UI.arrowRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(UI.arrowRaf);
+  UI.arrowRaf = 0;                 // 这一帧已经消费掉了
   const v = Net.view;
   const layer = $('#arrowLayer');
   if (!v || !layer) return;
   const arrow = v.arrow;
-  if (!arrow) { layer.innerHTML = ''; return; }
+  if (!arrow) { paintArrow(layer, ''); return; }
 
   const elapsed = Date.now() - arrow.at;
   const HOLD = 15000, FADE = 1200;
-  if (elapsed > HOLD + FADE) { layer.innerHTML = ''; return; }
+  if (elapsed > HOLD + FADE) { paintArrow(layer, ''); return; }
 
   // 窄屏（竖屏 / 手机）：布局是上下堆叠的，从座位卡画到弃牌托盘要横穿整个屏幕，
   // 会把星图、提示文字全部盖住。这种屏宽度下改为在牌块上直接写出是谁打的（.dc-who）。
   if (window.matchMedia && window.matchMedia('(max-width:1100px)').matches) {
-    layer.innerHTML = '';
+    paintArrow(layer, '');
     return;
   }
 
   const from = document.querySelector(`.seat-card[data-pid="${arrow.playerId}"], .player-card[data-pid="${arrow.playerId}"]`);
   const targets = [...document.querySelectorAll('.dchip.arrowed')];
-  if (!from || !targets.length) { layer.innerHTML = ''; return; }
+  if (!from || !targets.length) { paintArrow(layer, ''); return; }
 
   const o1 = from.getBoundingClientRect();
   const x1 = o1.right, y1 = o1.top + o1.height / 2;
@@ -1673,9 +1705,9 @@ function drawArrow() {
       stroke="rgba(232,182,76,${0.85 * op})" stroke-width="2" marker-end="url(#arrowHead)" opacity="${op}"/>`;
   }).join('');
 
-  layer.innerHTML = `<defs><marker id="arrowHead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-    <path d="M0,0 L6,3 L0,6 z" fill="rgba(232,182,76,${0.85 * op})"/></marker></defs>${paths}`;
-  requestAnimationFrame(drawArrow);
+  paintArrow(layer, `<defs><marker id="arrowHead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+    <path d="M0,0 L6,3 L0,6 z" fill="rgba(232,182,76,${0.85 * op})"/></marker></defs>${paths}`);
+  scheduleArrow();                 // 单飞：已经在排着的就不用再加一条
 }
 
 /* ---------- 广播弹窗 ---------- */
@@ -1856,6 +1888,16 @@ function render() {
   // 换场景：上一局"看过什么"全部作废，新一局的牌才会重新发一遍
   if (scene !== UI.scene) resetSceneFx();
 
+  /* 入场动画还没播完（720ms 内）又来一次状态推送：先把 scene-in 摘掉再重绘。
+     否则新画出来的 .hud/.board/.mybar 会把整屏入场从头再播一遍，
+     表现就是"刚进牌桌，牌桌又闪了一下"。markScene 在下面，会按需重新挂。 */
+  if (UI.sceneTimer) {
+    clearTimeout(UI.sceneTimer);
+    UI.sceneTimer = null;
+    const app = $('#app');
+    if (app) app.classList.remove('scene-in');
+  }
+
   if (Net.view) renderGame();
   else if (Net.room) renderLobby();
   else renderEntry();
@@ -1894,7 +1936,10 @@ function markScene(name) {
   void app.offsetWidth;            // 强制回流，同名 class 才会重新触发动画
   app.classList.add('scene-in');
   // 最长的一条是入口页的错峰（240ms 延迟 + 440ms），留到 720ms 收尾
-  UI.sceneTimer = setTimeout(() => app.classList.remove('scene-in'), 720);
+  UI.sceneTimer = setTimeout(() => {
+    app.classList.remove('scene-in');
+    UI.sceneTimer = null;          // 播完了：render() 里就不用再"提前摘"一次
+  }, 720);
 }
 
 /* 无限循环的装饰动画（目标呼吸、虚线推进、头像涟漪、更新角标）
@@ -1908,6 +1953,7 @@ function syncLoopPhase() {
   app.style.setProperty('--ph-a', `-${Math.round(now % 1900)}ms`);   // 1.9s 一组
   app.style.setProperty('--ph-b', `-${Math.round(now % 900)}ms`);    // 0.9s：虚线
   app.style.setProperty('--ph-c', `-${Math.round(now % 2200)}ms`);   // 2.2s：角标
+  app.style.setProperty('--ph-d', `-${Math.round(now % 1100)}ms`);   // 1.1s：思考中的三个点
 }
 
 Net.on((type, payload) => {
@@ -1923,7 +1969,7 @@ Net.on((type, payload) => {
 
 setInterval(() => {
   const v = Net.view;
-  if (v && v.arrow && Date.now() - v.arrow.at < 16500) drawArrow();
+  if (v && v.arrow && Date.now() - v.arrow.at < 16500) scheduleArrow();
 }, 500);
 
 // 毛玻璃偏好要尽早生效：等到 DOMContentLoaded 再套会先闪一下不透明面板
