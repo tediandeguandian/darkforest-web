@@ -616,8 +616,13 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     ok(w.__UI.gate && w.__UI.gate.mine === true, '轮到自己应标记 mine');
     const dur = w.__UI.gate ? (w.__UI.gate.until - Date.now()) : -1;
     ok(dur > 2700 && dur <= 3000, '提示时长应为 3 秒，实际 ' + dur + 'ms');
-    const html19 = w.document.querySelector('#app').innerHTML;
-    ok(html19.indexOf('轮到你出牌') >= 0, '应显示「轮到你出牌」');
+    // 提示卡不能在 #app 里：牌桌每次状态推送都整块重写 #app，
+    // 节点被重建 → tgPop 入场动画重播 → 3 秒里一直闪
+    const gate19 = w.document.querySelector('.turn-gate');
+    ok(!!gate19 && gate19.textContent.indexOf('轮到你出牌') >= 0, '应显示「轮到你出牌」');
+    ok(!w.document.querySelector('#app .turn-gate'), '换人提示不该放在 #app 内（会被重绘带走）');
+    w.__render();
+    ok(w.document.querySelector('.turn-gate') === gate19, '状态推送重绘时换人提示应复用同一节点');
     // 选一张牌（提示期间允许选，只是不能确认）
     const q = w.document.querySelector('.pcard[data-uid="q1"]');
     q && q.click();
@@ -627,6 +632,37 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     w.__UI.gate = null;
     w.__render();
     ok(!w.document.querySelector('#actPlay').disabled, '提示消失后「出牌」应恢复');
+  }
+
+  console.log('=== UI 19b. 广播弹窗：重绘不重建节点（不重播入场动画）===');
+  {
+    const g19b = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S19b = g19b.state();
+    S19b.players[0].galaxy = 1; S19b.players[1].galaxy = 2;
+    S19b.players[0].energy = 10; S19b.players[1].energy = 10;
+    S19b.players[0].hand = [{ uid: 'a1', key: 'star_coop' }];
+    S19b.players[1].hand = [{ uid: 'b1', key: 'star_coop' }];
+    S19b.currentIdx = 0; S19b.step = 'action';
+    const rb = g19b.playBroadcast('p0', 'a1', 2);
+    ok(rb.ok === true, '广播应发出: ' + (rb.msg || ''));
+
+    show(viewFor(g19b, 'p1'), 'p1');        // p1 是候选者 → 弹窗里要"你可以回应"
+    await new Promise(r => setTimeout(r, 20));
+    const m1 = w.document.querySelector('#modalRoot .modal');
+    ok(!!m1, '应弹出广播响应弹窗');
+    ok(!w.document.querySelector('#app #modalRoot'), '弹窗容器不该放在 #app 内（会被整块重绘带走）');
+    ok(!w.document.getElementById('modalRoot').classList.contains('no-anim'), '首次挂载应播入场动画');
+
+    // 等待别人回应时的状态推送：内容没变
+    w.__render();
+    ok(w.document.querySelector('#modalRoot .modal') === m1, '内容没变时弹窗节点应复用，不再重播入场动画');
+
+    // 内容真变了（已提交）：只换内容，也不该把遮罩"再浮一次"
+    g19b.setResponse('p1', 'b1', 'coop');
+    show(viewFor(g19b, 'p1'), 'p1');
+    await new Promise(r => setTimeout(r, 20));
+    ok(/已提交/.test(w.document.querySelector('#modalRoot').textContent), '回应后应显示"已提交"');
+    ok(w.document.getElementById('modalRoot').classList.contains('no-anim'), '内容变化时只换内容，不重播入场动画');
   }
 
   console.log('=== UI 20. 打击剩余手数 / 降维置灰 / 宽屏并排 ===');
