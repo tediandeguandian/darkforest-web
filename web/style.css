@@ -1297,9 +1297,11 @@ button:focus-visible,input:focus-visible,summary:focus-visible,[tabindex]:focus-
 }
 .node:hover .node-bg{filter:drop-shadow(0 0 7px rgba(87,200,216,.5))}
 /* 选中的目标：框线自己呼吸，比静态金色更抓眼，又不至于一直闪 */
-.node.target .node-bg{animation:targetPulse 1.9s var(--ease-io) infinite}
+/* ⚠️ 循环动画一律用负的 animation-delay 接相位（--ph-* 由 JS 每帧写进 #app）：
+   牌桌每次操作都重建节点，不接相位的话每次点击都会从 0 重新起跑，看着像闪一下。 */
+.node.target .node-bg{animation:targetPulse 1.9s var(--ease-io) infinite;animation-delay:var(--ph-a,0ms)}
 /* 有打击在飞：虚线往前走，等于"倒计时在走" */
-.node.under-strike .node-bg{animation:ants 900ms linear infinite}
+.node.under-strike .node-bg{animation:ants 900ms linear infinite;animation-delay:var(--ph-b,0ms)}
 /* 刚被降维：边框从烧红褪成死灰 */
 .node.just-dimmed .node-bg{animation:dimBang 900ms var(--ease-out) both}
 
@@ -1328,9 +1330,10 @@ button:focus-visible,input:focus-visible,summary:focus-visible,[tabindex]:focus-
 /* 当前回合玩家头像上的小点：一圈渐隐的涟漪，比单纯变色更容易被注意到 */
 .av-dot::after{
   content:'';position:absolute;inset:-3px;border-radius:50%;pointer-events:none;
-  border:1.5px solid var(--gold);animation:dotRing 1.9s var(--ease-out) infinite
+  border:1.5px solid var(--gold);animation:dotRing 1.9s var(--ease-out) infinite;
+  animation-delay:var(--ph-a,0ms)
 }
-.ub-dot{animation:badgeGlow 2.2s var(--ease-io) infinite}
+.ub-dot{animation:badgeGlow 2.2s var(--ease-io) infinite;animation-delay:var(--ph-c,0ms)}
 #updateBadge{animation:fadeIn var(--dur-3) var(--ease-out) both}
 /* 断线提示从上方挂下来 */
 .conn.show{animation:bannerIn var(--dur-3) var(--ease-out) both}

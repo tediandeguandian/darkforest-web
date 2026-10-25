@@ -22,6 +22,7 @@ const UI = {
      （选一张牌，整手牌都重新"发"一遍）。所以这里记住上一帧看到了什么，
      只在"多出来的那部分"上打标记，让动画只播一次。 */
   scene: null,         // 'entry' | 'lobby' | 'game'：场景切换时才播入场
+  sceneTimer: null,    // 入场动画的收尾定时器（播完就摘掉 scene-in）
   logOpen: false,      // 战报抽屉是否展开（重绘时要恢复）
   seenHand: null,      // Set(uid)：已见过的牌，用于判断哪张是刚摸到的
   prevSel: null,       // Set(uid)：上一帧选中的牌，用于区分"选中"和"取消选中"
@@ -400,22 +401,27 @@ function compareVer(a, b) {
  * ============================================================ */
 
 /* 退场：能播就播 150ms 再删，不能播就当场删。
-   ⚠️ 不能无条件延迟删除——jsdom（UI 冒烟测试）没有 Element.animate，
-   测试点完按钮就会断言节点没了，延迟删会全红。所以先探一下能力再说。 */
+   ⚠️ 两个坑，都踩过：
+   1) 不能无条件延迟删除——jsdom（UI 冒烟测试）没有 Element.animate，
+      测试点完按钮就会断言节点没了，延迟删会全红。所以先探一下能力再说。
+   2) 必须 fill:'forwards'。不加的话动画一结束就把样式让回下面的 CSS，
+      元素会在这一帧弹回"完全不透明"，下一帧才被删——看起来就是关弹窗时闪几下。 */
 function fxExit(node, panelSel) {
   if (!node) return;
   const done = () => node.remove();
   if (typeof node.animate !== 'function') return done();
   const ease = 'cubic-bezier(.4,0,1,1)';
+  const opts = { duration: 150, easing: ease, fill: 'forwards' };
   node.style.pointerEvents = 'none';        // 淡出期间别再挡住底下的点击
+  let last = null;
   try {
-    node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 150, easing: ease });
+    last = node.animate([{ opacity: 1 }, { opacity: 0 }], opts);
     const panel = panelSel ? node.querySelector(panelSel) : null;
-    if (panel) panel.animate(
-      [{ transform: 'none', opacity: 1 }, { transform: 'translateY(6px) scale(.985)', opacity: 0 }],
-      { duration: 150, easing: ease });
+    if (panel) last = panel.animate(
+      [{ transform: 'none', opacity: 1 }, { transform: 'translateY(6px) scale(.985)', opacity: 0 }], opts);
   } catch (e) { /* 动画失败不该拦住关闭 */ }
-  setTimeout(done, 165);                    // 兜底：动画被系统跳过时也要收尸
+  if (last && last.finished && last.finished.then) last.finished.then(done, done);
+  setTimeout(done, 220);                    // 兜底：动画被系统跳过时也要收尸
 }
 
 /* 弹窗内容没变就别重写 DOM——否则每个状态推送都会把入场动画重播一遍，
@@ -1793,6 +1799,7 @@ function render() {
   else renderEntry();
 
   markScene(scene);
+  syncLoopPhase();
 }
 
 /* 清掉动效比对游标（只在换场景时调用） */
@@ -1808,18 +1815,37 @@ function resetSceneFx() {
   UI.seatSet = null;
   UI.deckCount = null;
   UI.logOpen = false;
+  clearTimeout(UI.sceneTimer);
 }
 
 /* 场景入场：入口 → 大厅 → 牌桌各播一次。
    renderGame() 在对局里会被频繁调用（每次操作、每次 AI 推进），
-   所以必须只在"场景真的换了"时才加这个类，否则牌桌上会一直闪。 */
+   而 .hud/.board/.mybar 每次都是新建的 DOM——只要 #app 上还挂着 scene-in，
+   新建出来的元素就会把整屏入场动画从头播一遍（表现为「点一下牌，整屏闪一下」）。
+   所以入场播完就把类摘掉，之后的任何重绘都不再带动画。 */
 function markScene(name) {
   const app = $('#app');
   if (!app || UI.scene === name) return;
   UI.scene = name;
+  clearTimeout(UI.sceneTimer);
   app.classList.remove('scene-in');
   void app.offsetWidth;            // 强制回流，同名 class 才会重新触发动画
   app.classList.add('scene-in');
+  // 最长的一条是入口页的错峰（240ms 延迟 + 440ms），留到 720ms 收尾
+  UI.sceneTimer = setTimeout(() => app.classList.remove('scene-in'), 720);
+}
+
+/* 无限循环的装饰动画（目标呼吸、虚线推进、头像涟漪、更新角标）
+   在元素被重建时都会从 0 重新开始，点牌时看着就像"闪了一下"。
+   用负的 animation-delay 把它们接到原来的相位上跑，重绘就看不出来了。 */
+function syncLoopPhase() {
+  const app = $('#app');
+  if (!app) return;
+  const now = (typeof performance !== 'undefined' && performance.now)
+    ? performance.now() : Date.now();
+  app.style.setProperty('--ph-a', `-${Math.round(now % 1900)}ms`);   // 1.9s 一组
+  app.style.setProperty('--ph-b', `-${Math.round(now % 900)}ms`);    // 0.9s：虚线
+  app.style.setProperty('--ph-c', `-${Math.round(now % 2200)}ms`);   // 2.2s：角标
 }
 
 Net.on((type, payload) => {
