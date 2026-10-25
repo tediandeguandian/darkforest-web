@@ -1,0 +1,96 @@
+name: build-macos
+
+# macOS DMG 构建（Tauri 轻量版，通用二进制 x86_64 + arm64，最低 macOS 10.15）
+#   · 手动触发：Actions → build-macos → Run workflow
+#   · 打 tag（v1.0.24）时自动构建并挂到该 Release
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  dmg:
+    name: macOS DMG（universal，10.15+）
+    # 必须是 macOS runner：dmg 依赖 hdiutil / codesign，Linux 上做不出来
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 同步版本号（唯一真源 desktop/package.json）
+        run: sh tools/sync-version.sh
+
+      - name: 整理前端（web/ + shared/ → desktop-tauri/www）
+        run: sh desktop-tauri/prep.sh
+
+      - name: 生成 icon.icns（macOS 打包必需）
+        run: |
+          set -e
+          SRC=apk/icon/source-ai-1024.png
+          [ -f "$SRC" ] || SRC=desktop-tauri/src-tauri/icons/icon.png
+          rm -rf /tmp/icon.iconset && mkdir -p /tmp/icon.iconset
+          for s in 16 32 64 128 256 512; do
+            sips -z $s $s "$SRC" --out /tmp/icon.iconset/icon_${s}x${s}.png >/dev/null
+            d=$((s * 2))
+            sips -z $d $d "$SRC" --out /tmp/icon.iconset/icon_${s}x${s}@2x.png >/dev/null
+          done
+          iconutil -c icns /tmp/icon.iconset -o desktop-tauri/src-tauri/icons/icon.icns
+          ls -lh desktop-tauri/src-tauri/icons/icon.icns
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: cargo 缓存
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-tauri/src-tauri
+
+      - name: 安装 tauri-cli（走 npm 预编译包，比 cargo install 快很多）
+        run: npm install -g @tauri-apps/cli@^2
+
+      - name: 构建 DMG（universal）
+        working-directory: desktop-tauri
+        run: tauri build --target universal-apple-darwin --bundles dmg
+
+      - name: 产物改名（中文名 + 空格过 CI 容易出问题）
+        shell: bash
+        run: |
+          set -e
+          VER=$(node -p "require('./desktop/package.json').version")
+          cd desktop-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg
+          for f in *.dmg; do mv "$f" "dark-forest-${VER}-macos-universal.dmg"; done
+          ls -lh
+
+      - name: 校验 DMG 内的 app 与最低系统版本
+        run: |
+          set -e
+          DMG=$(ls desktop-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          hdiutil attach "$DMG" -nobrowse -readonly -mountpoint /tmp/dfmnt
+          APP=$(ls -d /tmp/dfmnt/*.app | head -1)
+          echo "APP = $APP"
+          /usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$APP/Contents/Info.plist"
+          lipo -archs "$APP/Contents/MacOS/"*
+          codesign -dv "$APP" 2>&1 | head -5 || true
+          hdiutil detach /tmp/dfmnt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dark-forest-macos-dmg
+          path: desktop-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+      - name: 挂到 Release（只传附件，不改正文）
+        if: startsWith(github.ref, 'refs/tags/')
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${GITHUB_REF_NAME}" \
+            desktop-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg --clobber
