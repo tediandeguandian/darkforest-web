@@ -6,8 +6,6 @@ name: build-macos
 on:
   workflow_dispatch:
   push:
-    branches:
-      - macos-dmg
     tags:
       - "v*"
 
