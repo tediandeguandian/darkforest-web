@@ -174,6 +174,7 @@ function openPrefModal() {
 
 /* ---------- 入口 ---------- */
 function renderEntry() {
+  clearOverlays();          // 从牌桌退回来时别把上一局的弹窗/换人提示留在屏上
   const saved = Net.name();
   const offline = !!Net.local;
   const canLan = !!Net.canLan;
@@ -429,8 +430,72 @@ function fxExit(node, panelSel) {
 function paintModal(root, html) {
   if (root.__dfHtml === html) return false;
   root.__dfHtml = html;
+  /* 只有"刚挂上"才播入场动画。弹窗开着的时候内容会变（"等待响应…" → "你可以回应"、
+     回应人数变化……），这时只换内容：.modal-mask{maskIn} / .modal{panelIn} 再跑一遍
+     就是肉眼可见的闪。清空（关闭）时把标记摘掉，下次打开照常播。 */
+  const firstMount = !html || root.childElementCount === 0;
   root.innerHTML = html;
+  root.classList.toggle('no-anim', !firstMount);
   return true;
+}
+
+/* ============================================================
+ * 常驻遮罩层
+ *
+ * #app 每次状态推送都整块 innerHTML 重写（renderGame 就是这么干的）。
+ * 弹窗容器和换人提示如果放在 #app 里，就会被连带重建：
+ *   · 广播弹窗：遮罩/面板的入场动画每推一次状态就重播一遍 → 整屏闪
+ *   · 换人提示：「轮到你出牌」那张卡 3 秒里被反复重建 → tgPop 反复起跑
+ * 所以这两块挂到 body 上，只做内容更新、不做节点重建。
+ * ============================================================ */
+function overlayRoot() {
+  let root = document.getElementById('modalRoot');
+  if (!root) {
+    root = el('div', 'modal-root');
+    root.id = 'modalRoot';
+    document.body.appendChild(root);       // 不在 #app 里：重写 #app 不会带走它
+  }
+  return root;
+}
+
+let gateEl = null;
+let gateKey = '';
+
+/* 换人提示：同一段提示全程复用同一个节点，内容没变就什么都不做 */
+function syncTurnGate() {
+  const g = UI.gate;
+  const key = g ? (g.mine ? 'mine:' : 'other:') + g.name : '';
+  if (gateEl && (!g || key !== gateKey)) {
+    gateEl.remove();
+    gateEl = null;
+    gateKey = '';
+  }
+  if (!g || gateEl) return;
+  gateKey = key;
+  gateEl = el('div', 'turn-gate' + (g.mine ? ' mine' : ''), `
+      <div class="tg-card">
+        <div class="tg-name">${g.mine ? '轮到你出牌' : esc(g.name) + ' 即将出牌'}</div>
+        <div class="tg-sub">${g.mine ? '看清局势再动手' : '做好准备'}</div>
+      </div>`);
+  document.body.appendChild(gateEl);
+}
+
+function clearTurnGate() {
+  clearTimeout(UI.gateTimer);
+  UI.gate = null;
+  if (gateEl) { gateEl.remove(); gateEl = null; }
+  gateKey = '';
+}
+
+/* 回入口/大厅时把牌桌上的浮层收干净（它们已经不在 #app 里，不会被顺带清掉） */
+function clearOverlays() {
+  const root = document.getElementById('modalRoot');
+  if (root && root.__dfHtml) {
+    root.__dfHtml = '';
+    root.innerHTML = '';
+    root.classList.remove('no-anim');
+  }
+  clearTurnGate();
 }
 
 /* 数值变动时跳一下：能量、牌库数都走这里 */
@@ -595,6 +660,7 @@ const LEVEL_FALLBACK = [
 ];
 
 function renderLobby() {
+  clearOverlays();
   const room = Net.room;
   if (!room) return renderEntry();
   const isHost = room.hostId === Net.me?.playerId;
@@ -833,14 +899,7 @@ function renderGame() {
       <div class="log-list" id="log"></div>
     </div>
 
-    <div class="modal-root" id="modalRoot"></div>
     <svg class="arrow-layer" id="arrowLayer"></svg>
-    ${UI.gate ? `<div class="turn-gate${UI.gate.mine ? ' mine' : ''}">
-      <div class="tg-card">
-        <div class="tg-name">${UI.gate.mine ? '轮到你出牌' : esc(UI.gate.name) + ' 即将出牌'}</div>
-        <div class="tg-sub">${UI.gate.mine ? '看清局势再动手' : '做好准备'}</div>
-      </div>
-    </div>` : ''}
   `;
 
   renderCounter(v);
@@ -851,6 +910,9 @@ function renderGame() {
   renderDiscard(v);
   renderHand(v);
   renderLog(v);
+  // 浮层不参与上面这轮重建：容器不在 #app 里，这里只做"有则更新"
+  overlayRoot();
+  syncTurnGate();
   renderBroadcastModal(v);
   renderEscapeModal(v);
 
