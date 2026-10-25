@@ -536,6 +536,54 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   w.eval(`delete window.DF_APP; window.__UI.desktop = null; window.__UI.apk = null;`);
   show(null, null);
 
+  console.log('=== UI 16b. 箭头层只跑一条 rAF 链（重绘不叠加）===');
+  {
+    const g16b = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S16b = g16b.state();
+    S16b.players[0].galaxy = 1; S16b.players[1].galaxy = 4;
+    S16b.players[0].energy = 20;
+    S16b.players[0].hand = [{ uid: 'a1', key: 'solar' }, { uid: 'a2', key: 'nuke' }];
+    S16b.currentIdx = 0; S16b.step = 'action';
+    const rd = g16b.discardCards('p0', ['a1']);
+    ok(rd.ok === true, '弃牌应成功: ' + (rd.msg || ''));
+
+    // 这一帧同时是"入口 → 牌桌"的换场景帧
+    w.__UI.scene = null;
+    show(viewFor(g16b, 'p1'), 'p1');
+    const app16 = w.document.querySelector('#app');
+    ok(app16.classList.contains('scene-in'), '换场景应挂上入专场类');
+    const firstRaf = w.__UI.arrowRaf;
+    ok(firstRaf > 0, '牌桌渲染应排上一帧箭头动画，实际 ' + firstRaf);
+
+    // 720ms 内又来一次推送：整屏入场不该重播，箭头也不该另起一条链
+    w.__render();
+    ok(!w.document.querySelector('#app').classList.contains('scene-in'),
+      '入场期间的重绘应先摘掉 scene-in，否则整屏入场动画重播（看着就是闪一下）');
+    ok(w.__UI.arrowRaf === firstRaf, '重绘不该另起一条 rAF 链（' + firstRaf + ' → ' + w.__UI.arrowRaf + '）');
+
+    w.drawArrow();                       // 500ms 兜底定时器走的就是这条路
+    const layer16 = w.document.querySelector('#arrowLayer');
+    ok((layer16.innerHTML || '').indexOf('<path') >= 0, '有目标时应画出箭头路径');
+    ok(w.__UI.arrowRaf !== firstRaf, '手动调度后应只留一条新的链');
+
+    // 内容没变就别重写 SVG（每帧改一次 innerHTML 会白白触发重排重绘）
+    let writes = 0;
+    const d0 = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(layer16), 'innerHTML');
+    Object.defineProperty(layer16, 'innerHTML', {
+      configurable: true,
+      get() { return d0.get.call(this); },
+      set(v) { writes++; d0.set.call(this, v); },
+    });
+    w.drawArrow();
+    ok(writes === 0, '箭头内容没变时不该重写 innerHTML，实际写了 ' + writes + ' 次');
+
+    // #app 重绘会换掉 <svg id="arrowLayer">：缓存必须跟着失效，否则箭头再也画不出来
+    w.__render();
+    w.drawArrow();
+    ok((w.document.querySelector('#arrowLayer').innerHTML || '').indexOf('<path') >= 0,
+      '换了 SVG 节点之后箭头要能重新画出来');
+  }
+
   console.log('=== UI 17. 窄屏不画跨屏箭头，改在牌块上标名字 ===');
   const g17 = createGame(['罗辑', '脱水者', '智子'], { strikeTarget: 'open' });
   const S17 = g17.state();
