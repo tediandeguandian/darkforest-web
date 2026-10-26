@@ -13,6 +13,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (C) {
 
   const { INF, CARD_DEFS, GALAXY_NAMES, ADJACENCY, galaxyDistance, buildDeck } = C;
+  // 拆除返还：老版本 cards.js 没有这个函数时退回同一套取整规则
+  const demolishRefund = C.demolishRefund || (k => (CARD_DEFS[k] ? Math.floor(CARD_DEFS[k].cost / 2) : 0));
   // 广播牌在结算前不对外暴露合作/伪装
   const hideFace = C.hideFace || (k => k);
   const familyName = C.familyName || (k => (CARD_DEFS[k] ? CARD_DEFS[k].name : k));
@@ -309,6 +311,28 @@
       ev('build', { actor: p.id, card: card.key });
       markActed();
       return { ok: true };
+    }
+
+    /* ---------- 拆除建设牌 ----------
+       返还建造费的一半（向下取整）。算一次行动：拆完本回合就结束了，
+       标准局里也不能再弃牌——否则"拆了重建成环"会变成免费的能量搬运。 */
+    function demolish(playerId, cardUid) {
+      const c = canAct(playerId); if (!c.ok) return c;
+      const p = c.p;
+      const i = p.buildZone.findIndex(x => x.uid === cardUid);
+      if (i < 0) return { ok: false, msg: '建设区里没有这张牌' };
+      const card = p.buildZone[i], def = CARD_DEFS[card.key];
+      const refund = demolishRefund(card.key);
+
+      p.buildZone.splice(i, 1);
+      const before = p.energy;
+      p.energy += refund;
+      noteEnergy(p, before, 'demolish');
+      pushDiscard(card, p.id, { batch: nextBatch(), tag: 'demolish' });
+      log(`${p.name} 拆除「${def.name}」（+${refund} 能量）`, 'build');
+      ev('build_remove', { actor: p.id, card: card.key, refund });
+      markActed();
+      return { ok: true, refund };
     }
 
     /* ---------- 广播 ---------- */
@@ -934,7 +958,7 @@
 
     const api = {
       newGame, state: () => S, currentPlayer: () => S.players[S.currentIdx], byId, alivePlayers,
-      playBuild, playBroadcast, setResponse, responsesComplete, finalizeBroadcast, chooseResponder,
+      playBuild, demolish, playBroadcast, setResponse, responsesComplete, finalizeBroadcast, chooseResponder,
       playStrike, withdrawStrike, discardCards, endTurn, validTargets, forceEnd, tickBroadcast,
       chooseEscape, tickEscape,
       playerNames: () => S.players.map(p => p.name),
