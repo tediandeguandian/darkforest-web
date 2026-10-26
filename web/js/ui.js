@@ -35,6 +35,7 @@ const UI = {
   arrowRaf: 0,         // 箭头层当前挂着的 rAF 句柄（0 = 没有链在跑）
   arrowHtml: '',       // 上一帧画出来的 SVG，一样就不再写 DOM
   arrowLayer: null,    // 上一帧的 <svg id="arrowLayer">，换节点时缓存作废
+  resetScroll: false,  // 本次渲染是否允许把滚动条归零（只在换场景时为真）
 };
 
 const $ = s => document.querySelector(s);
@@ -949,8 +950,11 @@ function renderGame() {
 
   scheduleArrow();
   requestAnimationFrame(() => handleEnergyEvents(v));
-  // 换局/重渲染时回到顶部，避免沿用上一屏的滚动位置
-  if (window.scrollY > 0 && window.innerWidth <= 1100) window.scrollTo(0, 0);
+  /* 只有"刚进入牌桌"才回到顶部。
+     以前这里是无条件执行，而点一张牌就会 renderGame() 一次——手机上点牌当场弹回顶上，
+     正在看牌桌中段的人直接被踢回开头。现在由 render() 在换场景时置位，这里消费一次。 */
+  if (UI.resetScroll && window.scrollY > 0 && window.innerWidth <= 1100) window.scrollTo(0, 0);
+  UI.resetScroll = false;
 }
 
 /* ---------- 能量飘字：在玩家卡上浮出 +N / −N，约 3 秒后淡出 ---------- */
@@ -1885,6 +1889,8 @@ function render() {
     document.body.classList.toggle('in-game', !!Net.view);
 
   const scene = Net.view ? 'game' : (Net.room ? 'lobby' : 'entry');
+  // 换场景才允许把滚动条归零（牌桌重绘不算，见 renderGame 里的注释）
+  UI.resetScroll = scene !== UI.scene;
   // 换场景：上一局"看过什么"全部作废，新一局的牌才会重新发一遍
   if (scene !== UI.scene) resetSceneFx();
 
