@@ -611,6 +611,57 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     ok(!!w.document.querySelector('.pcard[data-uid="c1"].selected'), '点牌仍应正常选中');
   }
 
+  console.log('=== UI 16d. 点建设牌看详情 / 拆除 ===');
+  {
+    const g16d = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S16d = g16d.state();
+    S16d.players[0].galaxy = 1; S16d.players[1].galaxy = 4;
+    S16d.players[0].energy = 12;
+    S16d.players[0].hand = [{ uid: 'd1', key: 'fusion' }];   // 建造费 3 → 拆返还 1
+    S16d.currentIdx = 0; S16d.step = 'action';
+    g16d.playBuild('p0', 'd1');
+    const dUid = S16d.players[0].buildZone[0].uid;
+
+    const calls = [];
+    const oldAct = w.Net.act;
+    w.Net.act = a => calls.push(a);
+
+    show(viewFor(g16d, 'p0'), 'p0');
+    w.__UI.gate = null;              // 跳过"先看清局势"的 3 秒
+    w.__render();
+
+    const chip = w.document.querySelector('.eq[data-build]');
+    ok(!!chip, '建设区的牌应是可点元素');
+    if (chip) chip.click();
+
+    const bm = w.document.getElementById('buildModal');
+    ok(!!bm, '点建设牌应弹出详情');
+    ok(!!bm && bm.textContent.indexOf('聚变反应堆') >= 0, '详情应显示牌名');
+    ok(!!bm && /返还/.test(bm.textContent) && /⚡1/.test(bm.textContent), '详情应显示返还 1 能量');
+    const go = w.document.getElementById('bmGo');
+    ok(!!go && !go.disabled, '自己行动阶段「拆除」应可用');
+
+    if (go) go.click();
+    const dlg = w.document.getElementById('appDialog');
+    ok(!!dlg && dlg.textContent.indexOf('拆除') >= 0, '点拆除应先弹确认框');
+    const okBtn = dlg && dlg.querySelector('[data-ok]');
+    if (okBtn) okBtn.click();
+    ok(calls.length === 1 && calls[0].type === 'demolish' && calls[0].uid === dUid,
+      '确认后应发出 demolish 动作，实际 ' + JSON.stringify(calls));
+
+    // 不是自己回合：按钮置灰 + 说明原因
+    S16d.currentIdx = 1;
+    show(viewFor(g16d, 'p0'), 'p0');
+    const chip2 = w.document.querySelector('.eq[data-build]');
+    if (chip2) chip2.click();
+    const go2 = w.document.getElementById('bmGo');
+    ok(!!go2 && go2.disabled, '不是自己回合「拆除」应置灰');
+    const bm2 = w.document.getElementById('buildModal');
+    ok(!!bm2 && bm2.textContent.indexOf('只能在自己的回合') >= 0, '应说明为什么不能拆');
+
+    w.Net.act = oldAct;
+  }
+
   console.log('=== UI 17. 窄屏不画跨屏箭头，改在牌块上标名字 ===');
   const g17 = createGame(['罗辑', '脱水者', '智子'], { strikeTarget: 'open' });
   const S17 = g17.state();

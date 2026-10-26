@@ -902,6 +902,22 @@ body{background:transparent}   /* 底色交给 html + body::before，别在这�
 .turn-gate.mine .tg-name{font-size:24px;letter-spacing:4px}
 @keyframes tgIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 
+/* 建设区的牌子现在可点（button 化），把浏览器默认外观抹掉 */
+button.eq{font-family:inherit;color:inherit;cursor:pointer;line-height:inherit}
+button.eq:hover{border-color:#3a3150;background:#1b1730}
+button.eq:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
+
+/* 建设牌详情 / 拆除 */
+.build-modal{max-width:420px}
+.bm-top{display:flex;align-items:center;gap:8px;padding:14px 16px 0}
+.bm-top b{flex:1;min-width:0;font-size:15px;letter-spacing:1px;color:var(--txt)}
+.bm-facts{display:flex;gap:12px;flex-wrap:wrap;padding:10px 16px 0;font-size:11px;color:var(--dim)}
+.bm-desc{margin:12px 16px 0;font-size:11.5px;line-height:1.6;color:#9a93ab}
+.bm-refund{margin:12px 16px 0;padding:8px 10px;border:1px dashed #3a3150;border-radius:6px;font-size:11.5px;color:var(--dim)}
+.bm-refund b{color:var(--gold)}
+.bm-why{margin:8px 16px 0;font-size:11px;color:#c98a86}
+.bm-actions{display:flex;gap:8px;justify-content:flex-end;padding:14px 16px 16px}
+
 /* 弃置按钮：不可用时置灰（含 danger 变体） */
 .pill.danger:disabled,
 .pill.mini:disabled{

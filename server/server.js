@@ -134,6 +134,7 @@ function handleAction(room, playerId, a) {
   if (!g) return { ok: false, msg: '对局尚未开始' };
   switch (a.type) {
     case 'build':     return g.playBuild(playerId, a.uid);
+    case 'demolish':  return g.demolish(playerId, a.uid);
     case 'broadcast': return g.playBroadcast(playerId, a.uid, a.galaxy);
     case 'strike':    return g.playStrike(playerId, a.uid, a.galaxy);
     case 'discard':   return g.discardCards(playerId, a.uids || []);

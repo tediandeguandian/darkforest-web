@@ -500,6 +500,7 @@ function clearOverlays() {
     root.classList.remove('no-anim');
   }
   clearTurnGate();
+  closeBuildModal();
 }
 
 /* 数值变动时跳一下：能量、牌库数都走这里 */
@@ -918,6 +919,12 @@ function renderGame() {
   renderCallout(v);
   renderDiscard(v);
   renderHand(v);
+  // 详情弹窗开着时，那张牌要是已经不在建设区了（刚被拆 / 换了局），跟着关掉
+  const bm = document.getElementById('buildModal');
+  if (bm) {
+    const mineBuilds = (v.players.find(p => p.id === v.me.id) || v.me).buildZone || [];
+    if (!mineBuilds.some(c => c.uid === bm.dataset.uid)) closeBuildModal();
+  }
   renderLog(v);
   // 浮层不参与上面这轮重建：容器不在 #app 里，这里只做"有则更新"
   overlayRoot();
@@ -961,6 +968,7 @@ function renderGame() {
 const ENERGY_REASON = {
   production: '生产', build: '建造', strike: '发射打击',
   broadcast: '广播结算', lightship: '光速飞船', reward: '清场奖励',
+  demolish: '拆除',
 };
 
 function ensureFloatLayer() {
@@ -1388,7 +1396,8 @@ function renderDiscard(v) {
     // 隐藏目标模式：科技锁死的落点会在当回合的弃牌堆里带上 targetGalaxy
     const destTip = d.targetGalaxy != null ? `｜目标 ${galLabel(d.targetGalaxy)}` : '';
     const tip = `${def.name}｜⚡${f.cost}｜${f.main}｜${f.sub}${destTip}｜${def.desc}`;
-    const tagLabel = d.tag === 'response' ? '回应' : d.tag === 'cast' ? '发布' : d.tag === 'rejected' ? '未采纳' : '';
+    const tagLabel = d.tag === 'response' ? '回应' : d.tag === 'cast' ? '发布'
+      : d.tag === 'rejected' ? '未采纳' : d.tag === 'demolish' ? '拆除' : '';
     const RING = ['#57c8d8', '#e0554f', '#5fbf83', '#f2b53c', '#9b7fd4', '#e08f4f'];
     const ring = RING[i % RING.length];
     const spine = i === 0 ? '' : ' spine';
@@ -1494,8 +1503,10 @@ function renderHand(v) {
 
   const builds = me.buildZone.map(c => {
     const def = CARD_DEFS[c.key], f = cardFacts(c.key);
-    return `<span class="eq ${def.type}" title="${esc(def.name)}｜⚡${f.cost}｜${f.main}｜${f.sub}｜${esc(def.desc)}">
-      <b>${esc(def.short)}</b><i>${esc(f.main)}</i></span>`;
+    // 点开看详情：完整说明 + 拆除（返还一半建造费）
+    return `<button type="button" class="eq ${def.type}" data-build="${c.uid}"
+        title="${esc(def.name)} · 点击查看详情 / 拆除">
+      <b>${esc(def.short)}</b><i>${esc(f.main)}</i></button>`;
   }).join('');
   $('#handHead').innerHTML = `
     <div class="me-chip" data-pid="${me.id}">
@@ -1505,6 +1516,9 @@ function renderHand(v) {
       <span class="me-gal">${esc(galLabel(me.galaxy))}</span>
     </div>
     <div class="me-builds">${builds || '<span class="dim small">尚未建设</span>'}</div>`;
+  $('#handHead').querySelectorAll('[data-build]').forEach(b => {
+    b.addEventListener('click', () => openBuildModal(b.getAttribute('data-build'), v));
+  });
 
   /* 手牌：平铺一行 */
   const hand = me.hand || [];
@@ -1712,6 +1726,71 @@ function drawArrow() {
   paintArrow(layer, `<defs><marker id="arrowHead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
     <path d="M0,0 L6,3 L0,6 z" fill="rgba(232,182,76,${0.85 * op})"/></marker></defs>${paths}`);
   scheduleArrow();                 // 单飞：已经在排着的就不用再加一条
+}
+
+/* ---------- 自己的建设牌：详情 + 拆除 ----------
+   建设区本来就是公开信息，这里只是把"这张牌到底干什么"摊开讲，
+   再给一个拆除入口。能不能拆由前端先算一遍（按钮置灰 + 说明原因），
+   服务端 demolish() 仍然会完整校验一次。 */
+function openBuildModal(uid, v) {
+  closeBuildModal();                       // 同时只留一个
+  const me = v.players.find(p => p.id === v.me.id) || v.me;
+  const card = (me.buildZone || []).find(c => c.uid === uid);
+  if (!card) return;
+
+  const def = CARD_DEFS[card.key], f = cardFacts(card.key);
+  const refund = demolishRefund(card.key);
+  const stepName = { production: '生产', action: '行动', supply: '补给' }[v.step] || v.step;
+  const myTurn = v.currentPlayerId === v.me.id;
+  const gated = !!(UI.gate && UI.gate.mine && Date.now() < UI.gate.until);
+  const why = !me.alive ? '你已被淘汰'
+    : !myTurn ? '只能在自己的回合拆除'
+    : v.broadcast ? '广播结算完才能行动'
+    : v.step !== 'action' ? `现在是${stepName}阶段`
+    : gated ? '先看清局势，提示消失后再操作'
+    : '';
+
+  const box = el('div', 'stack-modal-mask');
+  box.id = 'buildModal';
+  box.dataset.uid = uid;
+  box.innerHTML = `
+    <div class="stack-modal build-modal">
+      <div class="bm-top">
+        <span class="dc-tag on">建设</span>
+        <b>${esc(def.name)}</b>
+        <button class="mini-x" id="bmClose" title="关闭">×</button>
+      </div>
+      <div class="bm-facts">
+        <span>⚡${f.cost}</span><span>${esc(f.main)}</span><span>${esc(f.sub)}</span>
+      </div>
+      <div class="bm-desc">${esc(def.desc)}</div>
+      <div class="bm-refund">拆除返还 <b>⚡${refund}</b>（建造费 ${f.cost} 的一半，向下取整）</div>
+      ${why ? `<div class="bm-why">${why}</div>` : ''}
+      <div class="bm-actions">
+        <button class="btn ghost" id="bmCancel">关闭</button>
+        <button class="btn danger" id="bmGo"${why ? ' disabled' : ''}>拆除</button>
+      </div>
+    </div>`;
+  document.body.appendChild(box);
+
+  const close = () => closeBuildModal();
+  box.addEventListener('click', e => { if (e.target === box) close(); });
+  $('#bmClose').addEventListener('click', close);
+  $('#bmCancel').addEventListener('click', close);
+  $('#bmGo').addEventListener('click', () => {
+    openDialog({
+      title: '拆除建设牌',
+      body: `<p class="dlg-note" style="margin-top:0">拆除「${esc(def.name)}」，立刻返还 <b>⚡${refund}</b> 点能量。<br>
+        这张牌进弃牌堆，之后可能被洗回牌库。标准局里行动过后本回合不能再弃牌。</p>`,
+      okText: '拆除', cancelText: '再想想', danger: true,
+      onOk: () => { closeBuildModal(); Net.act({ type: 'demolish', uid }); },
+    });
+  });
+}
+
+function closeBuildModal() {
+  const box = document.getElementById('buildModal');
+  if (box) fxExit(box, '.stack-modal');
 }
 
 /* ---------- 广播弹窗 ---------- */

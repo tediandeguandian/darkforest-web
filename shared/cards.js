@@ -166,6 +166,12 @@
   /** 对外可见的广播名（不含合作/伪装） */
   function familyName(key) { return CARD_DEFS[hideFace(key)].name; }
 
+  /** 拆除建设牌能返还多少能量：建造费的一半，向下取整（6→3、3→1、2→1、8→4） */
+  function demolishRefund(key) {
+    const def = CARD_DEFS[key];
+    return def && typeof def.cost === 'number' ? Math.floor(def.cost / 2) : 0;
+  }
+
   return { INF, CARD_DEFS, GALAXY_NAMES, ADJACENCY, GALAXY_POS, galaxyDistance, cardFacts, buildDeck, TOTAL_CARDS,
-           hideFace, familyName };
+           hideFace, familyName, demolishRefund };
 });
