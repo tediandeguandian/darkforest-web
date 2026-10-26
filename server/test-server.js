@@ -1427,5 +1427,52 @@ console.log('=== 29. AI 不会卡住不动 ===');
   ok(w15 === 15000, '本地局应等 15 秒，实际 ' + w15);
 }
 
+console.log('=== 33. 拆除建设牌：返还一半能量、进弃牌堆 ===');
+{
+  const g33 = createGame(['A', 'B'], { strikeTarget: 'open' });
+  const S33 = g33.state();
+  S33.players[0].galaxy = 1; S33.players[1].galaxy = 4;
+  S33.players[0].energy = 10;
+  S33.players[0].hand = [{ uid: 'b1', key: 'fusion' }];   // 聚变反应堆：建造费 3
+  S33.currentIdx = 0; S33.step = 'action';
+
+  ok(g33.playBuild('p0', 'b1').ok === true, '建造应成功');
+  ok(S33.players[0].energy === 7, '建造后能量 7，实际 ' + S33.players[0].energy);
+  const bUid = S33.players[0].buildZone[0].uid;
+
+  const other = g33.demolish('p1', bUid);
+  ok(other.ok === false && /还没轮到你/.test(other.msg), '别人不能拆，实际 ' + (other.msg || ''));
+
+  S33.step = 'supply';
+  ok(g33.demolish('p0', bUid).ok === false, '补给阶段不能拆');
+  S33.step = 'action';
+
+  const rd = g33.demolish('p0', bUid);
+  ok(rd.ok === true, '自己回合应能拆: ' + (rd.msg || ''));
+  ok(rd.refund === 1, '3 费牌返还 1（向下取整），实际 ' + rd.refund);
+  ok(S33.players[0].energy === 8, '拆除后能量 8，实际 ' + S33.players[0].energy);
+  ok(S33.players[0].buildZone.length === 0, '建设区应清空');
+
+  const d33 = S33.discard.current.find(d => d.uid === bUid);
+  ok(!!d33, '拆掉的牌应进弃牌堆');
+  ok(d33 && d33.tag === 'demolish', '弃牌堆里应标记为拆除');
+  ok(S33.actionCount === 2, '拆除也计一次行动，实际 ' + S33.actionCount);
+
+  ok(g33.demolish('p0', bUid).ok === false, '同一张牌不能再拆');
+
+  const g33b = createGame(['A', 'B'], { strikeTarget: 'open' });
+  const S33b = g33b.state();
+  S33b.players[0].energy = 10;
+  S33b.players[0].hand = [{ uid: 'k1', key: 'bunker' }];  // 掩体星环：6 费
+  S33b.currentIdx = 0; S33b.step = 'action';
+  g33b.playBuild('p0', 'k1');
+  const r6 = g33b.demolish('p0', S33b.players[0].buildZone[0].uid);
+  ok(r6.refund === 3, '6 费牌返还 3，实际 ' + r6.refund);
+
+  const v33 = viewFor(g33b, 'p0');
+  const e33 = (v33.events || []).filter(e => e.type === 'energy' && e.reason === 'demolish').pop();
+  ok(!!e33 && e33.delta === 3, '应有 +3 的拆除能量事件');
+}
+
 console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);console.log(`\\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail?1:0);
