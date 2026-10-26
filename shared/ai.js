@@ -372,6 +372,7 @@
     if (!a) return { ok: false, msg: 'no action' };
     switch (a.type) {
       case 'build':     return game.playBuild(playerId, a.uid);
+      case 'demolish':  return game.demolish(playerId, a.uid);
       case 'broadcast': return game.playBroadcast(playerId, a.uid, a.galaxy);
       case 'strike':    return game.playStrike(playerId, a.uid, a.galaxy);
       case 'discard':   return game.discardCards(playerId, a.uids || []);
