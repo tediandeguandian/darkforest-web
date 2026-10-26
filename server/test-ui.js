@@ -584,6 +584,33 @@ console.log('=== UI 10. 对局中换星空背景 ===');
       '换了 SVG 节点之后箭头要能重新画出来');
   }
 
+  console.log('=== UI 16c. 点牌重绘不能把滚动条弹回顶部 ===');
+  {
+    const g16c = createGame(['A', 'B'], { strikeTarget: 'open' });
+    const S16c = g16c.state();
+    S16c.players[0].galaxy = 1; S16c.players[1].galaxy = 4;
+    S16c.players[0].energy = 20;
+    S16c.players[0].hand = [{ uid: 'c1', key: 'solar' }, { uid: 'c2', key: 'nuke' }];
+    S16c.currentIdx = 0; S16c.step = 'action';
+
+    let scrolled = 0;
+    w.scrollTo = () => { scrolled++; };
+    Object.defineProperty(w, 'scrollY', { configurable: true, get: () => 600 });
+
+    // 换场景进牌桌：允许回到顶部（原来的意图）
+    w.__UI.scene = null;
+    show(viewFor(g16c, 'p0'), 'p0');
+    ok(scrolled >= 1, '刚进牌桌应回到顶部，实际 ' + scrolled + ' 次');
+
+    // 点一张牌：同步触发 renderGame()，但绝不能动滚动位置
+    scrolled = 0;
+    const card16 = w.document.querySelector('.pcard[data-uid="c1"]');
+    ok(!!card16, '应画出手牌');
+    if (card16) card16.click();
+    ok(scrolled === 0, '点牌重绘不该调用 scrollTo（实际 ' + scrolled + ' 次）');
+    ok(!!w.document.querySelector('.pcard[data-uid="c1"].selected'), '点牌仍应正常选中');
+  }
+
   console.log('=== UI 17. 窄屏不画跨屏箭头，改在牌块上标名字 ===');
   const g17 = createGame(['罗辑', '脱水者', '智子'], { strikeTarget: 'open' });
   const S17 = g17.state();
