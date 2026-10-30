@@ -825,8 +825,8 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     ok(!!w.document.querySelector('.arena-main .map-wrap'), '.arena-main 里应有星图');
     ok(!!w.document.querySelector('.arena-main .tray'), '.arena-main 里应有弃牌堆');
     const css20 = fs.readFileSync(path.join(ROOT, 'web/style.css'), 'utf8');
-    ok(/\.arena-main\{[^}]*grid-template-columns:1fr 250px/.test(css20), '宽屏应把星图与弃牌堆左右并排');
-    ok(/\.arena-main\{grid-template-columns:1fr;grid-template-rows:auto auto/.test(css20), '窄屏应改回上下堆叠');
+    ok(/\.arena-main\{[^}]*grid-template-columns:1fr \d+px/.test(css20), '宽屏应把星图与弃牌堆左右并排（1fr + 固定宽侧栏）');
+    ok(/\.arena-main\{[^}]*grid-template-columns:1fr;grid-template-rows:auto auto/.test(css20), '窄屏应改回上下堆叠');
   }
 
   console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);  console.log(`\\nUI 结果: ${pass} 通过, ${fail} 失败`);
