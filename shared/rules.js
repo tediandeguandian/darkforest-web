@@ -47,12 +47,12 @@
     const BROADCAST_WAIT = Number((opts && opts.broadcastWaitMs) || 60000);
     /**
      * 打击目标显示（房间设置）：
-     *   open   —— 默认，与旧版完全一致：打击正面朝上，全场看到「谁 → 哪个星系」
-     *   hidden —— 只公开「谁打了哪一种、已飞几手」，目标星系与距离不下发；
+     *   hidden —— **默认**：只公开「谁打了哪一种、已飞几手」，目标星系与距离不下发；
      *             **打击生效那一刻**才公布落点。发起者自己始终能看到自己的目标。
+     *   open   —— 与旧版一致：打击正面朝上，全场看到「谁 → 哪个星系」。
      * 注意：`科技锁死` 是 immediate 牌，打出即生效，所以它的落点当回合就是公开的。
      */
-    const STRIKE_TARGET = (opts && opts.strikeTarget === 'hidden') ? 'hidden' : 'open';
+    const STRIKE_TARGET = (opts && opts.strikeTarget === 'open') ? 'open' : 'hidden';
     /** 当前是否隐藏打击目标——只读 S，才能让 hydrate 吃旧快照 */
     const blindStrikes = () => S.strikeTarget === 'hidden';
 
@@ -118,6 +118,7 @@
         endReason: null,   // last_stand / heat_death，决定结算界面怎么说
         actionCount: 0,    // 本回合已行动次数（AI 用来判断何时收手）
         discardUsed: false, // 本回合是否已弃置过（每回合只能弃一次，但可一次弃多张）
+        deadTickRound: 0,   // 阵亡者遗留打击推进到第几轮（一轮只推一次；开局是第 0 轮）
         events: [],        // 结构化公开事件（与日志同源，供 AI 记忆 / 复盘）
         eventSeq: 0,
         theme: '赫尔辛根莫斯肯',
@@ -174,6 +175,9 @@
 
       tickStrikes(p);
       if (S.phase !== 'playing') return;
+      // 已阵亡玩家遗留的打击：按"每轮一手"继续飞（他们自己没有回合了）
+      tickDeadStrikes();
+      if (S.phase !== 'playing') return;
       // 极端情况：玩家跃迁后正好落进自己先前发射的打击目标，被自己打死
       if (!p.alive) { nextPlayer(); return; }
       // 打击命中且他手里有光速飞船：整局挂在这里等他点「启动 / 放弃」
@@ -214,6 +218,37 @@
       // 同一回合可能有多枚打击同时到期；一旦要等光速飞船的决定，
       // 后面的先不结算（留到下个回合，届时他要么已经跃迁、要么已经死了）
       due.forEach(st => { if (!S.escapePending) resolveStrike(st); });
+    }
+
+    /**
+     * 阵亡者遗留的打击。
+     *
+     * 规则：文明被清理后，**已经发射出去的打击不会消失**，仍按原计划飞完。
+     * （否则"抢先打死发射者"就等于免费拦截，和卡面写的"发射后无法拦截"自相矛盾。）
+     *
+     * 推进节奏：死者没有自己的回合了，按"每整轮 +1 手"补上——活着的玩家本来就是
+     * 每轮各有一个回合、每次 +1 手，两者节奏完全一致，落点不会被"死亡"推迟或提前。
+     * 用 S.deadTickRound 去重：一轮只推一次，不会因为 nextPlayer 递归进 beginTurn 而连推。
+     */
+    function tickDeadStrikes() {
+      const n = S.players.length || 1;
+      const round = Math.floor((S.turnIndex - 1) / n);
+      if (S.deadTickRound === round) return;
+      S.deadTickRound = round;
+
+      const due = [];
+      S.players.forEach(p => {
+        if (p.alive) return;                    // 活人有自己的回合，走 tickStrikes
+        p.strikes.forEach(st => {
+          if (st.resolved) return;
+          // 本轮才打出去的别急着推：它还没飞完一轮
+          if (st.createdAtTurn === S.turnIndex) return;
+          st.progress++;
+          if (st.progress >= st.required) due.push(st);
+        });
+      });
+      // 和 tickStrikes 同一条原则：一旦要等光速飞船的决定，后面的留到下个回合
+      due.forEach(st => { if (!S.escapePending && S.phase === 'playing') resolveStrike(st); });
     }
 
     /**
@@ -611,6 +646,16 @@
       return { ok: true };
     }
 
+    /**
+     * 撤回自己发射的打击。
+     *
+     * 刻意**不限时间**：只要还活着、这支打击还在飞，就随时可以撤回——
+     * 不用等自己的回合，广播结算中、别人思考时、光速飞船待决时都可以。
+     * （打击本来就不占行动次数，撤回也不该占；否则"什么时候能后悔"会变成一门额外的规则。）
+     *
+     * 代价：**能量不退**。发射那一刻就把钱烧掉了，撤回只是叫停，不是退款。
+     * 撤回的牌进弃牌堆（明牌），目标不公开——它从没生效，不该因此泄露发射者的坐标。
+     */
     function withdrawStrike(playerId, strikeUid) {
       if (S.phase !== 'playing') return { ok: false, msg: '对局已结束' };
       const p = byId(playerId);
@@ -843,16 +888,13 @@
       log(`${p.name} 被淘汰（${reason}）`, 'elim');
       ev('eliminate', { actor: p.id, galaxy: p.galaxy });
 
-      // 文明毁灭后，它自己还在飞的打击失去制导——否则会永远挂在星图上没人推进
+      // 注意：**不清空 p.strikes**。
+      // 打击一旦发射就脱离发射者的控制，文明毁灭不会把它拦下来——它按原计划飞完，
+      // 落点照常结算（死者的击杀不拿清场奖励，见 finishStrike）。
+      // 推进由 beginTurn 里的 tickDeadStrikes 按轮补上。
       const flying = p.strikes.filter(s => !s.resolved);
       if (flying.length) {
-        p.strikes = p.strikes.filter(s => s.resolved);
-        const fb = nextBatch();
-        flying.forEach(st => pushDiscard({ uid: st.uid, key: st.key }, p.id, { batch: fb, tag: 'discard' }));
-        log(`${p.name} 在飞的 ${flying.length} 枚打击失去制导，坠入虚空`, 'elim');
-        flying.forEach(st => ev('strike_void', blindStrikes()
-          ? { actor: p.id, card: st.key }
-          : { actor: p.id, card: st.key, target: st.targetGalaxy }));
+        log(`${p.name} 已毁灭，但它发射的 ${flying.length} 枚打击仍在飞行`, 'elim');
       }
       const hand = p.hand.splice(0, p.hand.length);
       const hb = nextBatch();
@@ -966,8 +1008,11 @@
       hydrate(snapshot) {
         S = snapshot;
         S.mode = S.mode || 'standard';   // 旧快照没有这个字段
-        // 旧快照没有打击目标设置 → 退回 open（与旧版行为一致）
-        S.strikeTarget = S.strikeTarget === 'hidden' ? 'hidden' : 'open';
+        // 旧快照没有打击目标设置 → 用新默认 hidden（只有明确存了 open 的老局保持公开）
+        S.strikeTarget = S.strikeTarget === 'open' ? 'open' : 'hidden';
+        if (typeof S.deadTickRound !== 'number') {
+          S.deadTickRound = Math.floor((S.turnIndex - 1) / Math.max(1, S.players.length));
+        }
         S.events = S.events || [];
         S.eventSeq = S.eventSeq || (S.events.length ? S.events[S.events.length - 1].id : 0);
         return api;

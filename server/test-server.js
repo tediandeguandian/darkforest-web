@@ -396,8 +396,8 @@ const batchIds = new Set(SH.discard.current.map(d => d.batch));
 ok(batchIds.size === 1, '同一次广播结算的三张牌应在同一批，实际 ' + batchIds.size + ' 批');
 ok(SH.players[2].hand.length === 0, '未选中者的手牌应被拿走');
 
-// 13.5 打击不泄露飞行回合数
-const gI = createGame(['A','B']);
+// 13.5 打击不泄露飞行回合数（沿用 open 模式：这里要验的是"目标公开、距离保密"）
+const gI = createGame(['A','B'], { strikeTarget: 'open' });
 const SI = gI.state();
 SI.players[0].galaxy = 1; SI.players[1].galaxy = 4; SI.players[0].energy = 20;
 SI.players[0].hand = [{ uid: 'm1', key: 'photoid' }];
@@ -409,7 +409,7 @@ ok(mineStrike.progress === 0 && mineStrike.required === 2, '发起者能看到�
 ok(otherStrike.progress === 0, '「已飞几手」对所有人公开');
 ok(otherStrike.required === null, '但「还要几手」= 距离，只有发起者知道');
 ok(otherStrike.turnsLeft === null, '他人算不出还剩几手');
-ok(otherStrike.targetGalaxy === 3, '但目的地仍是公开的');
+ok(otherStrike.targetGalaxy === 3, 'open 模式下目的地仍是公开的');
 const castEv = SI.events.find(e => e.type === 'strike_cast');
 ok(castEv && castEv.distance === undefined, 'strike_cast 事件不得携带距离');
 ok(!/回合到达|需 \d+ 回合/.test(SI.log[0].text), '日志不得写出需要几回合，实际：' + SI.log[0].text);
@@ -781,12 +781,14 @@ console.log('=== 21. 边界兜底：牌库见底 / 死者的打击 / 回合上�
   ok(ST.log.some(l => /牌库见底/.test(l.text)), '应记录洗回日志');
 }
 
-// 21.2 被淘汰的玩家，在飞的打击失去制导（不能永远挂在星图上）
+// 21.2 被淘汰的玩家，在飞的打击**不会消失**，仍按原计划飞完
+//      （否则"抢先打死发射者"就等于免费拦截，和卡面写的"发射后无法拦截"矛盾）
 {
-  const gU = createGame(['A','B','C']);
+  const gU = createGame(['A','B','C'], { strikeTarget: 'open' });
   const SU = gU.state();
   SU.players[0].galaxy = 1; SU.players[1].galaxy = 2; SU.players[2].galaxy = 5;
   SU.players[0].energy = 20;
+  SU.players[2].hand = [];   // C 手里别留光速飞船，保证直接结算
   SU.players[0].strikes = [{ uid: 'k1', key: 'nuke', casterId: 'p0', targetGalaxy: 2, progress: 0, required: 1, resolved: false }];
   SU.players[1].strikes = [{ uid: 'k2', key: 'nuke', casterId: 'p1', targetGalaxy: 5, progress: 0, required: 3, resolved: false }];
   SU.currentIdx = 0; SU.step = 'action';
@@ -795,9 +797,24 @@ console.log('=== 21. 边界兜底：牌库见底 / 死者的打击 / 回合上�
   gU.endTurn('p1');   // → C
   gU.endTurn('p2');   // → A，A 的打击命中 B
   ok(SU.players[1].alive === false, 'B 应被淘汰');
-  ok(SU.players[1].strikes.length === 0, 'B 在飞的打击应被清空，实际剩 ' + SU.players[1].strikes.length);
-  ok(SU.discard.current.some(d => d.uid === 'k2'), '那枚打击应进弃牌堆');
-  ok(SU.events.some(e => e.type === 'strike_void'), '应记录"失去制导"事件');
+  ok(SU.players[1].strikes.length === 1, 'B 在飞的打击不该消失，实际剩 ' + SU.players[1].strikes.length);
+  ok(!SU.discard.current.some(d => d.uid === 'k2'), '那枚打击不该进弃牌堆');
+  ok(SU.log.some(l => /仍在飞行/.test(l.text)), '应记录"打击仍在飞行"');
+  ok(!SU.events.some(e => e.type === 'strike_void'), '不该再有"失去制导"事件');
+
+  // 之后按"每轮 +1 手"推进：满 3 手命中 C
+  const eDead = SU.players[1].energy;
+  let guard = 0;
+  while (SU.phase === 'playing' && guard++ < 20) {
+    const cur = SU.players[SU.currentIdx];
+    if (!cur || !cur.alive) break;
+    SU.step = 'action';
+    gU.endTurn(cur.id);
+  }
+  ok(SU.players[2].alive === false, 'B 阵亡后遗留的打击仍应命中 C');
+  ok(SU.discard.current.some(d => d.uid === 'k2'), '落地后应进弃牌堆');
+  ok(SU.players[1].energy === eDead, '死者的击杀不拿清场奖励');
+  ok(SU.phase === 'ended' && SU.winner === 'p0', '只剩 A 应结束对局');
 }
 
 // 21.3 回合上限：人类局也要能收
@@ -987,11 +1004,18 @@ console.log('=== 24. 房间设置：打击目标显示 ===');
 // 整节包在一个块里，避免和上面的顶层 const 撞名
 {
 
-// 24.1 默认（open）：与旧版一致，全场看到「谁 → 哪个星系」
+// 24.1 默认就是 hidden：不传设置时，打击目标对别人不可见
 {
-  const gO = createGame(['A','B']);
+  const gD = createGame(['A','B']);
+  ok(gD.state().strikeTarget === 'hidden', '默认应为 hidden，实际 ' + gD.state().strikeTarget);
+  ok(viewFor(gD, 'p0').strikeTarget === 'hidden', '视图默认应下发 strikeTarget=hidden');
+}
+
+// 24.1b 显式 open：与旧版一致，全场看到「谁 → 哪个星系」
+{
+  const gO = createGame(['A','B'], { strikeTarget: 'open' });
   const SO = gO.state();
-  ok(SO.strikeTarget === 'open', '默认应为 open，实际 ' + SO.strikeTarget);
+  ok(SO.strikeTarget === 'open', '显式 open 应生效，实际 ' + SO.strikeTarget);
   SO.players[0].galaxy = 1; SO.players[1].galaxy = 5;
   SO.players[0].energy = 20;
   SO.players[0].hand = [{ uid: 'o1', key: 'nuke' }];
@@ -1095,13 +1119,16 @@ ok(viewFor(gH, 'p2').events.every(e => e.type !== 'strike_cast' || e.target === 
   ok(openLock && openLock.targetGalaxy === undefined, '公开模式弃牌堆不加目标字段');
 }
 
-// 24.6 旧快照 hydrate 默认回到 open
+// 24.6 旧快照 hydrate：没存过这个字段的按新默认 hidden，明确存了 open 的保持 open
 {
   const gOld = createGame(['A','B']);
   const snap = JSON.parse(JSON.stringify(gOld.state()));
   delete snap.strikeTarget;
   const gNew = createGame().hydrate(snap);
-  ok(gNew.state().strikeTarget === 'open', '旧快照应默认 open');
+  ok(gNew.state().strikeTarget === 'hidden', '旧快照应默认 hidden');
+  const snapO = JSON.parse(JSON.stringify(gOld.state()));
+  snapO.strikeTarget = 'open';
+  ok(createGame().hydrate(snapO).state().strikeTarget === 'open', '老局存了 open 就保持 open');
   const snap2 = JSON.parse(JSON.stringify(gOld.state()));
   snap2.strikeTarget = 'hidden';
   ok(createGame().hydrate(snap2).state().strikeTarget === 'hidden', '快照里的 hidden 应保留');
@@ -1125,13 +1152,65 @@ ok(viewFor(gH, 'p2').events.every(e => e.type !== 'strike_cast' || e.target === 
   const rH = new Room();
   const hostH = rH.join('房主', null);
   const guestH = rH.join('客人', null);
-  ok(rH.strikeTarget === 'open', '新房间默认 open');
-  ok(rH.setStrikeTarget(guestH.playerId, 'hidden').error, '非房主不能改打击目标设置');
-  ok(rH.setStrikeTarget(hostH.playerId, 'hidden').ok, '房主可以改');
-  ok(rH.summary().strikeTarget === 'hidden', '大厅摘要应带 strikeTarget');
+  ok(rH.strikeTarget === 'hidden', '新房间默认 hidden');
+  ok(rH.setStrikeTarget(guestH.playerId, 'open').error, '非房主不能改打击目标设置');
+  ok(rH.setStrikeTarget(hostH.playerId, 'open').ok, '房主可以改');
+  ok(rH.summary().strikeTarget === 'open', '大厅摘要应带 strikeTarget');
   ok(rH.start(hostH.playerId).ok, '应能开局');
-  ok(rH.game.state().strikeTarget === 'hidden', '开局应把设置传给引擎');
-  ok(!!rH.setStrikeTarget(hostH.playerId, 'open').error, '开局后不能再改');
+  ok(rH.game.state().strikeTarget === 'open', '开局应把设置传给引擎');
+  ok(!!rH.setStrikeTarget(hostH.playerId, 'hidden').error, '开局后不能再改');
+}
+
+// 24.9 撤回不限时间：不是自己的回合、广播待结算，都能撤回；能量不退、不占行动
+{
+  const gW = createGame(['A','B','C'], { strikeTarget: 'hidden' });
+  const SW = gW.state();
+  SW.players[0].galaxy = 1; SW.players[1].galaxy = 2; SW.players[2].galaxy = 5;
+  SW.players[0].energy = 10;
+  SW.players[0].hand = [{ uid: 'w1', key: 'photoid' }];
+  SW.currentIdx = 0; SW.step = 'action';
+  ok(gW.playStrike('p0', 'w1', 4).ok, '发射应成功');
+  const stW = SW.players[0].strikes[0];
+  const eFired = SW.players[0].energy;
+
+  gW.endTurn('p0');
+  ok(SW.players[SW.currentIdx].id === 'p1', '现在应轮到 B');
+  // 再挂一个"广播待结算"，确认最刁钻的时刻也不拦撤回
+  SW.broadcast = { casterId: 'p1', card: { uid: 'bx', key: 'star_coop' }, cost: 2, targetGalaxy: 2,
+    candidates: [], responses: {}, stage: 'collecting', createdAt: Date.now(),
+    deadline: Date.now() + 60000, chooseDeadline: null };
+
+  const actBefore = SW.actionCount;
+  ok(gW.withdrawStrike('p0', stW.uid).ok, '别人回合 + 广播挂起时也应该能撤回');
+  ok(SW.players[0].energy === eFired, '撤回不返还能量，实际 ' + SW.players[0].energy);
+  ok(SW.actionCount === actBefore, '撤回不消耗行动次数');
+  ok(SW.players[0].strikes.length === 0, '撤回后打击应离开星图');
+  ok(SW.discard.current.some(d => d.uid === stW.uid), '撤回的牌应进弃牌堆');
+  ok(!gW.withdrawStrike('p0', stW.uid).ok, '同一支打击不能撤回两次');
+  SW.broadcast = null;
+
+  // 撤回过的打击彻底消失：再跑两轮也不该有落地事件
+  SW.step = 'action'; gW.endTurn('p1');
+  SW.step = 'action'; gW.endTurn('p2');
+  SW.step = 'action'; gW.endTurn('p0');
+  ok(!SW.events.some(e => e.type === 'strike_hit' || e.type === 'strike_miss'), '撤回后不该再有落地结算');
+}
+
+// 24.10 撤回目标不泄露（隐藏模式下，别人只看到"谁撤了哪种"）
+{
+  const gZ = createGame(['A','B'], { strikeTarget: 'hidden' });
+  const SZ = gZ.state();
+  SZ.players[0].galaxy = 1; SZ.players[1].galaxy = 4;
+  SZ.players[0].energy = 10;
+  SZ.players[0].hand = [{ uid: 'z1', key: 'nuke' }];
+  SZ.currentIdx = 0; SZ.step = 'action';
+  gZ.playStrike('p0', 'z1', 4);
+  gZ.withdrawStrike('p0', 'z1');
+  const vZ = viewFor(gZ, 'p1');
+  const evZ = vZ.events.filter(e => e.type === 'strike_withdraw').pop();
+  ok(evZ && evZ.target === undefined, '对手看到的撤回事件不应带目标：' + JSON.stringify(evZ));
+  ok(vZ.log.every(l => l.text.indexOf(vZ.galaxyNames[4]) < 0),
+    '对手战报里的撤回也不写目标');
 }
 
 }

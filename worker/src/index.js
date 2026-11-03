@@ -100,9 +100,9 @@ export class Room {
   async load() {
     if (this.data) return this.data;
     const saved = await this.ctx.storage.get('room');
-    this.data = saved || { id: null, seats: [], started: false, snap: null, createdAt: Date.now(), mode: 'standard', strikeTarget: 'open' };
+    this.data = saved || { id: null, seats: [], started: false, snap: null, createdAt: Date.now(), mode: 'standard', strikeTarget: 'hidden' };
     this.data.mode = this.data.mode || 'standard';   // 旧房间没有这个字段
-    this.data.strikeTarget = this.data.strikeTarget === 'hidden' ? 'hidden' : 'open';   // 同上
+    this.data.strikeTarget = this.data.strikeTarget === 'open' ? 'open' : 'hidden';   // 同上（默认隐藏）
     return this.data;
   }
 
@@ -510,7 +510,7 @@ export class Room {
       hostId: this.data.seats[0] ? this.data.seats[0].playerId : null,
       started: this.data.started,
       mode: this.data.mode || 'standard',
-      strikeTarget: this.data.strikeTarget === 'hidden' ? 'hidden' : 'open',
+      strikeTarget: this.data.strikeTarget === 'open' ? 'open' : 'hidden',
       seats: this.data.seats.map(s => ({
         playerId: s.playerId, name: s.name, connected: s.connected !== false,
         isAI: !!s.isAI, aiLevel: s.aiLevel || null,
