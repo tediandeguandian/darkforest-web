@@ -817,6 +817,31 @@ console.log('=== 21. 边界兜底：牌库见底 / 死者的打击 / 回合上�
   ok(SU.phase === 'ended' && SU.winner === 'p0', '只剩 A 应结束对局');
 }
 
+// 21.2b 阵亡遗留打击按"全场转一圈"推进，不能因为死人不再产生回合而被拉长
+//       （3 人局死 1 人后每轮只剩 2 个回合；若用 turnIndex/3 算轮次，打击会慢 1.5 倍）
+{
+  const gP = createGame(['A','B','C'], { strikeTarget: 'open' });
+  const SP = gP.state();
+  SP.players[0].galaxy = 1; SP.players[1].galaxy = 2; SP.players[2].galaxy = 5;
+  SP.players[0].energy = 20;
+  SP.players[2].hand = [];
+  SP.players[0].strikes = [{ uid: 'p1s', key: 'nuke', casterId: 'p0', targetGalaxy: 2, progress: 0, required: 1, resolved: false }];
+  SP.players[1].strikes = [{ uid: 'p2s', key: 'nuke', casterId: 'p1', targetGalaxy: 5, progress: 0, required: 5, resolved: false, createdAtTurn: 0 }];
+  SP.currentIdx = 0; SP.step = 'action';
+
+  gP.endTurn('p0');   // → B
+  gP.endTurn('p1');   // → C
+  gP.endTurn('p2');   // → A：A 打死 B，死者遗留打击同时推进 1 手
+  ok(!SP.players[1].alive, 'B 应被淘汰');
+  const dead = SP.players[1].strikes[0];
+  const p0 = dead.progress;
+
+  gP.endTurn('p0');   // → C
+  SP.step = 'action';
+  gP.endTurn('p2');   // → A：转完一圈
+  ok(dead.progress === p0 + 1, `一整圈应正好推进 1 手，实际 +${dead.progress - p0}`);
+}
+
 // 21.3 回合上限：人类局也要能收
 {
   const gV = createGame(['A','B']);
