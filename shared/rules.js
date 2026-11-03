@@ -118,7 +118,8 @@
         endReason: null,   // last_stand / heat_death，决定结算界面怎么说
         actionCount: 0,    // 本回合已行动次数（AI 用来判断何时收手）
         discardUsed: false, // 本回合是否已弃置过（每回合只能弃一次，但可一次弃多张）
-        deadTickRound: 0,   // 阵亡者遗留打击推进到第几轮（一轮只推一次；开局是第 0 轮）
+        roundNo: 0,         // 全场转完一圈 +1（座位号回绕时），阵亡者遗留打击按它推进
+        deadTickRound: 0,   // 阵亡者遗留打击已推进到第几轮（一轮只推一次）
         events: [],        // 结构化公开事件（与日志同源，供 AI 记忆 / 复盘）
         eventSeq: 0,
         theme: '赫尔辛根莫斯肯',
@@ -228,11 +229,15 @@
      *
      * 推进节奏：死者没有自己的回合了，按"每整轮 +1 手"补上——活着的玩家本来就是
      * 每轮各有一个回合、每次 +1 手，两者节奏完全一致，落点不会被"死亡"推迟或提前。
+     *
+     * ⚠️ 轮次必须用 S.roundNo（座位号转回小号时才 +1），**不能**用
+     *    `floor((turnIndex-1)/人数)`：有人阵亡后每轮只剩更少的回合，而 turnIndex
+     *    仍然一格一格涨，除出来的一"轮"会被拉长（3 人局死 1 人 → 慢 1.5 倍）。
+     *
      * 用 S.deadTickRound 去重：一轮只推一次，不会因为 nextPlayer 递归进 beginTurn 而连推。
      */
     function tickDeadStrikes() {
-      const n = S.players.length || 1;
-      const round = Math.floor((S.turnIndex - 1) / n);
+      const round = S.roundNo || 0;
       if (S.deadTickRound === round) return;
       S.deadTickRound = round;
 
@@ -265,12 +270,16 @@
 
     function nextPlayer() {
       if (S.phase !== 'playing') return;
+      const prevSeat = S.players[S.currentIdx].seat;
       let guard = 0;
       do {
         S.currentIdx = (S.currentIdx + 1) % S.players.length;
         guard++;
       } while (!S.players[S.currentIdx].alive && guard < S.players.length * 2);
       if (alivePlayers().length <= 1) return endGame();
+      // 座位号绕回小号 = 全场转完一圈。阵亡者的遗留打击按这个节奏推进
+      // （不能用 turnIndex/人数：死人不再产生回合，那样算出来的一轮会被拉长）
+      if (S.players[S.currentIdx].seat <= prevSeat) S.roundNo = (S.roundNo || 0) + 1;
       S.turnIndex++;
       beginTurn();
     }
@@ -1010,9 +1019,8 @@
         S.mode = S.mode || 'standard';   // 旧快照没有这个字段
         // 旧快照没有打击目标设置 → 用新默认 hidden（只有明确存了 open 的老局保持公开）
         S.strikeTarget = S.strikeTarget === 'open' ? 'open' : 'hidden';
-        if (typeof S.deadTickRound !== 'number') {
-          S.deadTickRound = Math.floor((S.turnIndex - 1) / Math.max(1, S.players.length));
-        }
+        if (typeof S.roundNo !== 'number') S.roundNo = 0;
+        if (typeof S.deadTickRound !== 'number') S.deadTickRound = S.roundNo;
         S.events = S.events || [];
         S.eventSeq = S.eventSeq || (S.events.length ? S.events[S.events.length - 1].id : 0);
         return api;
