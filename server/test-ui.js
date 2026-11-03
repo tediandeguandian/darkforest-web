@@ -152,6 +152,15 @@ ok(sm && sm.querySelectorAll('[data-mode]').length === 2, '设置里应有两个
 ok(!!(sm && sm.querySelector('.set-opt.on')), '当前取值应高亮');
 sm && sm.remove();
 
+// 缺省（老房间没带 strikeTarget）时应高亮"隐藏"——本版起默认隐藏打击目标
+delete w.Net.room.strikeTarget;
+w.openSettings();
+const sm2 = w.document.querySelector('#settingsModal');
+const onOpt = sm2 && sm2.querySelector('[data-strike].on');
+ok(!!onOpt && onOpt.getAttribute('data-strike') === 'hidden',
+  '缺省时应高亮隐藏，实际 ' + (onOpt && onOpt.getAttribute('data-strike')));
+sm2 && sm2.remove();
+
 /* ---------- 7. 入口页的「下载安卓版」 ----------
  * 只验证两种结局：后端给了 apk.json 就画出入口；没给就什么都不画（不留死链）。*/
 (async () => {
@@ -827,6 +836,55 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     const css20 = fs.readFileSync(path.join(ROOT, 'web/style.css'), 'utf8');
     ok(/\.arena-main\{[^}]*grid-template-columns:1fr \d+px/.test(css20), '宽屏应把星图与弃牌堆左右并排（1fr + 固定宽侧栏）');
     ok(/\.arena-main\{[^}]*grid-template-columns:1fr;grid-template-rows:auto auto/.test(css20), '窄屏应改回上下堆叠');
+  }
+
+  console.log('=== UI 21. 我的在飞打击：随时可撤回 ===');
+  {
+    const g21 = createGame(['A', 'B'], { strikeTarget: 'hidden' });
+    const S21 = g21.state();
+    S21.players[0].galaxy = 1; S21.players[1].galaxy = 4;
+    S21.players[0].energy = 20;
+    S21.players[0].hand = [{ uid: 'q21', key: 'nuke' }];
+    S21.currentIdx = 0; S21.step = 'action';
+    g21.playStrike('p0', 'q21', 4);
+
+    show(viewFor(g21, 'p0'), 'p0');
+    const chip = w.document.querySelector('.me-strikes .strike-chip[data-wd]');
+    ok(!!chip, '自己的在飞打击应出现在 .me-strikes 里，并带撤回入口');
+    ok(!!chip && chip.title.indexOf('撤回') >= 0, '悬停提示应说明点一下就是撤回');
+    ok(!!chip && chip.getAttribute('data-wd') === 'q21', 'data-wd 应指向这支打击');
+    // 自己的目标始终可见（隐藏模式只藏别人的）
+    ok(!!chip && chip.textContent.indexOf('4') >= 0, '自己的打击应写出去哪个星系，实际 ' + (chip && chip.textContent));
+
+    // 点一下：先弹确认（能量不退得说清楚），确认后才发动作
+    const acts = [];
+    const prevAct = w.Net.act;
+    w.Net.act = a => acts.push(a);
+    chip.click();
+    const dlg = w.document.querySelector('#appDialog');
+    ok(!!dlg, '点撤回应先弹确认框');
+    ok(!!dlg && dlg.textContent.indexOf('不返还') >= 0, '确认框要写明能量不退');
+    ok(acts.length === 0, '只是打开确认框，不该立刻撤回');
+    dlg && dlg.querySelector('[data-ok]').click();
+    ok(acts.length === 1 && acts[0].type === 'withdraw' && acts[0].uid === 'q21',
+      '确认后应发出 withdraw 动作：' + JSON.stringify(acts));
+    w.Net.act = prevAct;
+    dlg && dlg.remove();
+
+    // 出局后：打击还在飞，但撤回入口收掉，只留只读提示
+    S21.players[0].alive = false;
+    show(viewFor(g21, 'p0'), 'p0');
+    const off = w.document.querySelector('.me-strikes .strike-chip.off');
+    ok(!!off, '出局后仍应看到自己在飞的打击');
+    ok(!!off && !off.hasAttribute('data-wd'), '出局后不该再给撤回入口');
+    ok(!!off && off.title.indexOf('仍按原计划') >= 0, '提示里应说明出局后打击照旧飞完');
+  }
+
+  console.log('=== UI 22. 默认隐藏打击目标 ===');
+  {
+    // 新局不传设置：视图必须已经是 hidden，界面据此打「暗打」标
+    const g22 = createGame(['A', 'B']);
+    ok(viewFor(g22, 'p0').strikeTarget === 'hidden', '新局默认应是 hidden');
   }
 
   console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);  console.log(`\\nUI 结果: ${pass} 通过, ${fail} 失败`);

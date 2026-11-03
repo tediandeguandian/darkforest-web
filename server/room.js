@@ -26,7 +26,7 @@ class Room {
     this.thinking = false;   // 人机是否正在"思考"（前端显示倒计时/思考中）
     this.aiSeq = 0;
     this.mode = 'standard';   // standard / fast，房主可在开局前切换
-    this.strikeTarget = 'open';   // open（全场可见目标）/ hidden（只公开类型与已飞手数）
+    this.strikeTarget = 'hidden'; // hidden（默认：只公开类型与已飞手数）/ open（全场可见目标）
     this.createdAt = Date.now();
     this.lastActive = Date.now();
     rooms.set(this.id, this);

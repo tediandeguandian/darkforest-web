@@ -803,9 +803,9 @@ function openSettings() {
         <div class="set-group">
           <div class="set-label">打击目标</div>
           <div class="set-opts">
-            ${[['open', '公开', '全场知道「谁 → 哪个星系」'],
-               ['hidden', '隐藏', '只公开打击类型与已飞手数，落地那一刻才公布位置']].map(([k, n, d]) => `
-              <button class="set-opt${(r.strikeTarget || 'open') === k ? ' on' : ''}" data-strike="${k}" ${isHost ? '' : 'disabled'}>
+            ${[['hidden', '隐藏（默认）', '只公开打击类型与已飞手数，落地那一刻才公布位置'],
+               ['open', '公开', '全场知道「谁 → 哪个星系」']].map(([k, n, d]) => `
+              <button class="set-opt${(r.strikeTarget || 'hidden') === k ? ' on' : ''}" data-strike="${k}" ${isHost ? '' : 'disabled'}>
                 <b>${n}</b><span>${d}</span></button>`).join('')}
           </div>
         </div>
@@ -1508,6 +1508,24 @@ function renderHand(v) {
         title="${esc(def.name)} · 点击查看详情 / 拆除">
       <b>${esc(def.short)}</b><i>${esc(f.main)}</i></button>`;
   }).join('');
+  /* 我发射出去、还在飞的打击：摆在自己名字旁边，随时可撤回。
+     刻意不放在"我的回合"才出现的地方——撤回不限时间，别人思考时也该能点。 */
+  const flying = (me.strikes || []).filter(s => s.required != null && s.targetGalaxy != null);
+  const strikes = flying.map(s => {
+    const def = CARD_DEFS[s.key];
+    const left = Math.max(0, s.required - s.progress);
+    if (!me.alive) {
+      return `<span class="strike-chip off"
+        title="${esc(def.name)} → ${esc(galLabel(s.targetGalaxy))}｜已飞 ${s.progress}/${s.required} 手｜你已出局，但这支打击仍按原计划飞完">
+        <b>${esc(def.short)}</b><span class="sc-arrow">→</span><span class="sc-gal">${esc(galShort(s.targetGalaxy))}</span>
+        <span class="sc-prog">${s.progress}/${s.required}</span></span>`;
+    }
+    return `<button type="button" class="strike-chip" data-wd="${s.uid}"
+        title="${esc(def.name)} → ${esc(galLabel(s.targetGalaxy))}｜已飞 ${s.progress}/${s.required} 手，还需 ${left} 手｜点击撤回（能量不退）">
+      <b>${esc(def.short)}</b><span class="sc-arrow">→</span><span class="sc-gal">${esc(galShort(s.targetGalaxy))}</span>
+      <span class="sc-prog">${s.progress}/${s.required}</span><span class="sc-x">✕</span></button>`;
+  }).join('');
+
   $('#handHead').innerHTML = `
     <div class="me-chip" data-pid="${me.id}">
       <span class="me-av">${esc((me.name || '?').slice(0, 1))}</span>
@@ -1515,9 +1533,29 @@ function renderHand(v) {
       <span class="me-energy">⚡ ${me.energy}</span>
       <span class="me-gal">${esc(galLabel(me.galaxy))}</span>
     </div>
-    <div class="me-builds">${builds || '<span class="dim small">尚未建设</span>'}</div>`;
+    <div class="me-builds">${builds || '<span class="dim small">尚未建设</span>'}</div>
+    ${strikes ? `<div class="me-strikes"><span class="ms-label">在飞</span>${strikes}</div>` : ''}`;
   $('#handHead').querySelectorAll('[data-build]').forEach(b => {
     b.addEventListener('click', () => openBuildModal(b.getAttribute('data-build'), v));
+  });
+  /* 撤回：任何时间都能点（不占行动、不校验回合），代价是能量不退——所以先问一句 */
+  $('#handHead').querySelectorAll('[data-wd]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const uid = btn.getAttribute('data-wd');
+      const s = (me.strikes || []).find(x => x.uid === uid);
+      if (!s) return;
+      const def = CARD_DEFS[s.key];
+      openDialog({
+        title: '撤回打击',
+        body: `<p class="dlg-note" style="margin-top:0">「${esc(def.name)}」正在飞向
+            <b>${esc(galLabel(s.targetGalaxy))}</b>，已飞 ${s.progress}/${s.required} 手，还需 ${Math.max(0, s.required - s.progress)} 手。</p>
+          <p class="dlg-note">撤回后这支打击立刻消失：<b>已付出的能量不返还</b>，也不消耗本回合的行动次数。</p>`,
+        okText: '撤回（不退能量）',
+        cancelText: '让它继续飞',
+        danger: true,
+        onOk: () => Net.act({ type: 'withdraw', uid }),
+      });
+    });
   });
 
   /* 手牌：平铺一行 */

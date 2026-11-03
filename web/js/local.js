@@ -12,7 +12,7 @@ const Net = (() => {
   let seats = [];               // { playerId, name, isAI, aiLevel, seed }
   let started = false;
   let mode = 'standard';        // standard / fast
-  let strikeTarget = 'open';    // open / hidden：打击目标是否公开
+  let strikeTarget = 'hidden';  // open / hidden：打击目标是否公开（默认隐藏）
   let thinking = false;
   let aiRunning = false;
   let aiTimer = null;
@@ -265,7 +265,7 @@ const Net = (() => {
     game = null;
     seats = [];
     mode = 'standard';
-    strikeTarget = 'open';
+    strikeTarget = 'hidden';
     started = false;
     thinking = false;
     aiRunning = false;
