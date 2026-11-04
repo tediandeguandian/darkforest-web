@@ -202,6 +202,10 @@ a{color:var(--cyan)}
 .icon-btn{
   position:absolute;top:16px;right:16px;width:34px;height:34px;border-radius:var(--r-m);
   display:flex;align-items:center;justify-content:center;cursor:pointer;
+  /* 必须压在 .lobby-head 之上：DOM 里本按钮排在 <header> 之前，而 .lobby-head 是
+     定位元素（position:relative），同层下后出现的会盖住先出现的。窄屏 h1 撑满宽度，
+     正好铺到右上角，按钮就点不动了（elementFromPoint 命中的是 H1）。 */
+  z-index:4;
   border:1px solid var(--line);background:rgba(18,23,33,.6);color:var(--dim);
   transition:color var(--dur-2) var(--ease),border-color var(--dur-2) var(--ease),
     transform var(--dur-3) var(--ease),background var(--dur-2) var(--ease);
@@ -428,7 +432,11 @@ a{color:var(--cyan)}
 .rule-line i{opacity:.4;font-style:normal}
 .rule-line span{color:var(--dim)}
 .rule-edit{
-  background:none;border:0;padding:0 2px;cursor:pointer;
+  background:none;border:0;position:relative;
+  /* 视觉仍是 11px 的下划线小字，但把热区撑到 ~42×33：原来只有 26×17，
+     手机上基本点不中（Apple HIG 建议 ≥44×44）。padding 撑开后用负 margin 收回，
+     不影响 .rule-line 的排版。 */
+  padding:8px 10px;margin:-8px -10px;cursor:pointer;
   color:var(--gold);font-size:11px;text-decoration:underline;
   text-underline-offset:3px;text-decoration-color:rgba(232,180,95,.4);
 }
