@@ -224,6 +224,7 @@ function renderEntry() {
         </div>
         <div class="lobby-actions">
           <button class="btn" id="joinBtn">加入</button>
+          <button class="btn ghost" id="watchBtn" title="只用对局码看别人打，不占席位">观战</button>
         </div>
         ${(typeof window !== 'undefined' && window.DF_APP) ? `
           <div class="lobby-actions" style="margin-top:14px">
@@ -249,6 +250,16 @@ function renderEntry() {
       Net.joinRoom(r, n);
     });
     $('#roomcode').addEventListener('keydown', e => { if (e.key === 'Enter') jb.click(); });
+  }
+
+  const wb = $('#watchBtn');
+  if (wb) {
+    wb.addEventListener('click', () => {
+      const r = ($('#roomcode').value || '').trim().toUpperCase();
+      if (!r) return toast('请输入对局码');
+      if (typeof Net.watch !== 'function') return toast('当前模式不支持观战');
+      Net.watch(r);
+    });
   }
 
   const lb = $('#lanBtn');
@@ -680,7 +691,7 @@ const LOBBY_TPL = `
         <h1>三体 · 黑暗森林</h1>
         <p class="sub" id="lobbySub"></p>
         <div class="roomcode" id="lobbyCode"></div>
-        <div class="dim small">把这个号发给朋友，或直接加几位对手开打</div>
+        <div class="dim small" id="lobbyHint">把这个号发给朋友，或直接加几位对手开打</div>
       </header>
 
       <div class="lobby-grid">
@@ -851,6 +862,11 @@ function renderLobby() {
   showEl('#startBtn', isHost);
   showEl('#lobbyNeed', isHost && room.seats.length < 2);
   showEl('#lobbyWait', !isHost);
+  setTxt('#lobbyWait', Net.spectating ? '观战中 · 等房主开局…' : '等房主开局…');
+  setTxt('#leaveLobby', Net.spectating ? '退出观战' : '返回');
+  setTxt('#lobbyHint', Net.spectating
+    ? '你正在观战 · 开局后会直接切到牌桌'
+    : '把这个号发给朋友，或直接加几位对手开打');
   const sb = $('#startBtn');
   if (sb) sb.disabled = room.seats.length < 2;
 
@@ -931,13 +947,26 @@ function openSettings() {
 }
 
 /* ---------- 游戏 ---------- */
-function renderGame() {
-  const v = Net.view;
-  if (!v) return;
+/* 观战者没有「我」：视图里 me 是 null。牌桌的渲染函数到处都在读 v.me.xxx，
+   与其改几十处判空，不如给一副"空壳"：有 id/字段形状，但不在 players 里，
+   所以任何 find(p => p.id === v.me.id) 都会落到兜底分支。 */
+const SPECTATOR_ME = {
+  id: null, seat: -1, name: '观战者', galaxy: null,
+  alive: false, energy: 0, hand: [], handCount: 0, buildZone: [], strikes: [],
+};
 
-  /* 换人提示：轮到一个人时，先给 3 秒"XX 即将出牌"，避免瞬间跳过来看不清 */
+function renderGame() {
+  const raw = Net.view;
+  if (!raw) return;
+  const spectator = !!raw.spectator;
+  const v = spectator ? Object.assign({}, raw, { me: SPECTATOR_ME }) : raw;
+
+  /* 换人提示：轮到一个人时，先给 3 秒"XX 即将出牌"，避免瞬间跳过来看不清。
+     观战者不需要"先别动"的 3 秒遮罩，那是给要出牌的人看的。 */
   const turnKey = `${v.turnIndex}:${v.currentPlayerId}`;
-  if (v.phase === 'playing' && v.step === 'action') {
+  if (spectator) {
+    clearTurnGate();
+  } else if (v.phase === 'playing' && v.step === 'action') {
     if (UI.turnKey !== turnKey) {
       const cp = v.players.find(p => p.id === v.currentPlayerId);
       UI.gate = {
@@ -967,10 +996,13 @@ function renderGame() {
         ${v.strikeTarget === 'hidden'
           ? `<span class="mode-chip blind" title="隐藏打击目标：只公开打击类型与已飞手数，落地那一刻才公布位置">暗打</span>`
           : ''}
+        ${spectator
+          ? `<span class="mode-chip spec" title="观战中：只看得到公开信息（位置与手牌不对任何人公开）">观战</span>`
+          : ''}
         <span class="hud-turn" title="第 ${v.turnIndex} 回合">T${v.turnIndex} · ${esc(cur ? cur.name : '—')} · ${stepMap[v.step] || ''}</span>
         <button class="hbtn hbtn-icon" id="prefBtnGame" title="设置" aria-label="设置">${GEAR}</button>
         <button class="hbtn" id="logBtn">战报</button>
-        <button class="hbtn" id="leaveBtn">退出</button>
+        <button class="hbtn" id="leaveBtn">${spectator ? '退出观战' : '退出'}</button>
       </div>
     </header>
 
@@ -998,9 +1030,15 @@ function renderGame() {
       <aside class="seats" id="seatsRight"></aside>
     </main>
 
-    <footer class="mybar">
-      <div class="my-line" id="handHead"></div>
-      <div class="hand" id="hand"></div>
+    <footer class="mybar${spectator ? ' spectating' : ''}">
+      ${spectator ? `
+        <div class="spec-note">
+          <span class="spec-dot"></span>
+          <b>观战中</b>
+          <span class="dim">房间 ${esc(Net.roomId || '')} · ${v.players.length} 位玩家 · 只看得到公开信息，任何人的位置与手牌都不会下发</span>
+        </div>` : `
+        <div class="my-line" id="handHead"></div>
+        <div class="hand" id="hand"></div>`}
     </footer>
 
     <div class="log-drawer${UI.logOpen ? ' open' : ''}" id="logDrawer">
@@ -1017,7 +1055,7 @@ function renderGame() {
   trackStrikeReveals(v);   // 隐藏目标模式：落地瞬间要播报落点，必须先于 callout
   renderCallout(v);
   renderDiscard(v);
-  renderHand(v);
+  if (!spectator) renderHand(v);   // 观战没有手牌区，也就没有操作按钮
   // 详情弹窗开着时，那张牌要是已经不在建设区了（刚被拆 / 换了局），跟着关掉
   const bm = document.getElementById('buildModal');
   if (bm) {
@@ -1027,11 +1065,12 @@ function renderGame() {
   renderLog(v);
   // 浮层不参与上面这轮重建：容器不在 #app 里，这里只做"有则更新"
   overlayRoot();
-  syncTurnGate();
-  renderBroadcastModal(v);
+  syncTurnGate();  renderBroadcastModal(v);
   renderEscapeModal(v);
 
   $('#leaveBtn').addEventListener('click', () => {
+    // 观战不占席位、不影响对局，不用确认，直接回入口页
+    if (spectator) { Net.leave(); render(); return; }
     // 以前是 confirm()——WebView 里会弹成系统警告框，样式完全不受控
     openDialog({
       title: '退出对局',
@@ -1276,7 +1315,7 @@ function renderMap(v) {
   const W = 600, H = 458;
   const pos = g => GALAXY_POS[g];
 
-  const me = v.players.find(p => p.id === v.me.id);
+  const me = v.players.find(p => p.id === v.me.id) || v.me;   // 观战者不在 players 里，退回空壳
   const selCard = UI.selected.size === 1
     ? (me.hand || []).find(c => c.uid === [...UI.selected][0])
     : null;
@@ -1352,6 +1391,7 @@ function renderMap(v) {
   wrap.innerHTML = svg;
 
   wrap.querySelectorAll('.node').forEach(n => {
+    if (v.spectator) return;         // 观战者不能选目标
     n.addEventListener('click', () => {
       const g = +n.dataset.g;
       UI.targetGalaxy = (UI.targetGalaxy === g) ? null : g;
@@ -1362,7 +1402,10 @@ function renderMap(v) {
   /* 目标提示条 */
   const chip = $('#targetChip');
   if (chip) {
-    if (!UI.targetGalaxy) {
+    if (v.spectator) {
+      chip.className = 'target-chip';
+      chip.innerHTML = '';
+    } else if (!UI.targetGalaxy) {
       chip.className = 'target-chip';
       chip.innerHTML = '点击星系选择目标';
     } else {
@@ -1390,7 +1433,7 @@ function renderCallout(v) {
     html = `<div class="co-main">${esc(UI.strikeReveal.text)}</div>
       <div class="co-sub">${esc(UI.strikeReveal.sub)}</div>`;
   } else {
-    const me = v.players.find(p => p.id === v.me.id);
+    const me = v.players.find(p => p.id === v.me.id) || v.me;   // 观战者：空壳，永远不会命中"飞向我"
     const flight = [];
     v.players.forEach(p => (p.strikes || []).forEach(s => flight.push(s)));
     const known = flight.filter(s => s.targetGalaxy != null);
@@ -1593,7 +1636,7 @@ function openStackModal(items, zone) {
 }
 
 function renderHand(v) {
-  const me = v.players.find(p => p.id === v.me.id);
+  const me = v.players.find(p => p.id === v.me.id) || v.me;
   const isMyTurn = v.currentPlayerId === v.me.id;
   // 换人提示期间不是"不能行动"，而是"先别动"——按钮照常显示，只是置灰
   const gated = !!(UI.gate && UI.gate.mine && Date.now() < UI.gate.until);
@@ -1702,7 +1745,7 @@ function renderHand(v) {
   }
   (UI.pendingSeen = UI.pendingSeen || []).push(...hand.map(c => c.uid));
 
-  /* 斗地主式按钮组：不出 / 提示 / 出牌 */
+  /* 斗地主式按钮组：结束回合 / 提示 / 出牌 */
   const selCards = [...UI.selected].map(u => hand.find(c => c.uid === u)).filter(Boolean);
   const sel = selCards.length === 1 ? selCards[0] : null;
   const selDef = sel ? CARD_DEFS[sel.key] : null;
@@ -1720,7 +1763,7 @@ function renderHand(v) {
     $('#actions').innerHTML = `<span class="hint">${hint}</span>`;
   } else {
     $('#actions').innerHTML = `
-      <button class="pill pass" id="actPass" ${canUse ? '' : 'disabled'}>不出</button>
+      <button class="pill pass" id="actPass" ${canUse ? '' : 'disabled'}>结束回合</button>
       <button class="pill hint" id="actHint" ${canUse ? '' : 'disabled'}>提示</button>
       <button class="pill play" id="actPlay" ${canPlay ? '' : 'disabled'}>出牌</button>
       <button class="pill mini danger" id="actDiscard"
@@ -1754,7 +1797,7 @@ function renderHand(v) {
   bind('actPass', () => { UI.selected.clear(); UI.targetGalaxy = null; Net.act({ type: 'end' }); });
   bind('actHint', () => {
     const usable = hand.filter(c => CARD_DEFS[c.key].cost <= me.energy && !CARD_DEFS[c.key].escape);
-    if (!usable.length) return toast('没有打得出的牌，可以先「不出」');
+    if (!usable.length) return toast('没有打得出的牌，可以先「结束回合」');
     const order = { build: 0, broadcast: 1, strike: 2 };
     usable.sort((a, b) => order[CARD_DEFS[a.key].type] - order[CARD_DEFS[b.key].type]);
     const pick = usable[0];
@@ -2104,8 +2147,11 @@ function render() {
   if (!Net.roomId) setConnHint(false);
 
   // 背景分两种：入口/大厅是"黑暗森林"（松林 + 月光），牌桌上抬头换成星空
-  if (typeof document !== 'undefined' && document.body)
+  if (typeof document !== 'undefined' && document.body) {
     document.body.classList.toggle('in-game', !!Net.view);
+    // 观战：窄屏顶栏要少放几样东西（见 style.css 的 body.spectating 规则）
+    document.body.classList.toggle('spectating', !!(Net.view && Net.view.spectator));
+  }
 
   const scene = Net.view ? 'game' : (Net.room ? 'lobby' : 'entry');
   // 换场景才允许把滚动条归零（牌桌重绘不算，见 renderGame 里的注释）
@@ -2193,7 +2239,12 @@ Net.on((type, payload) => {
      紧跟着的 lobby / state 才是真正的第一帧。以前在这里 render 一次，
      入口页被整块重建（入场动画从头再播），然后大厅再播一次，就成了"跳两次"。 */
   else if (type === 'joined') { /* 等 lobby / state */ }
-  else if (type === 'error') { toast(payload); }
+  else if (type === 'error') {
+    toast(payload);
+    /* 观战时房间不存在 / 已过期：直接把连接收掉回入口页。
+       否则会留一条连不上的 socket 在那儿，下次点观战还要先等它超时。 */
+    if (Net.spectating && /房间不存在|已过期|失效/.test(payload)) { Net.leave(); render(); }
+  }
   /* 断线提示条：id 之前写成了 #connState（页面上叫 #conn），
      而且只改了文字、没加 .show——真断线时它永远是透明的。 */
   else if (type === 'close') {

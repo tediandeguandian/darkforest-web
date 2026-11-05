@@ -11,7 +11,7 @@ const Net = (() => {
   let pendingRoom = null;   // 本次要进入的房间
   let pendingName = null;
 
-  const state = { view: null, room: null, me: null, connected: false, roomId: null };
+  const state = { view: null, room: null, me: null, connected: false, roomId: null, spectating: false };
 
   const LS = {
     get: k => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -56,10 +56,11 @@ const Net = (() => {
     try { sock.close(); } catch {}
   };
 
-  function open(roomId, name = null, token = null) {
+  function open(roomId, name = null, token = null, opts = null) {
     pendingRoom = roomId;
     pendingName = name;
     state.roomId = roomId;
+    if (opts && typeof opts.spectate === 'boolean') state.spectating = opts.spectate;
 
     const old = ws;
     ws = null;
@@ -68,6 +69,7 @@ const Net = (() => {
     const sock = new WebSocket(wsUrl(roomId));
     ws = sock;
     state.connected = false;
+    const spectate = state.spectating;
 
     sock.onopen = () => {
       if (sock !== ws) return;
@@ -75,7 +77,13 @@ const Net = (() => {
       state.connected = true;
       emit('open');
       const t = token || LS.get('df_token');
-      sock.send(JSON.stringify({ t: 'hello', name: pendingName || LS.get('df_name') || '玩家', token: t || undefined }));
+      /* 观战：不带 token（观战者没有席位），服务端只挂一条只读连接。
+         带了 token 反而会被当成"原玩家重连"，直接接管席位。 */
+      if (spectate) {
+        sock.send(JSON.stringify({ t: 'hello', name: '观战者', spectate: true }));
+      } else {
+        sock.send(JSON.stringify({ t: 'hello', name: pendingName || LS.get('df_name') || '玩家', token: t || undefined }));
+      }
     };
 
     sock.onmessage = ev => {
@@ -84,6 +92,15 @@ const Net = (() => {
       try { m = JSON.parse(ev.data); } catch { return; }
       switch (m.t) {
         case 'joined':
+          if (m.spectator) {
+            // 观战不写 localStorage：刷新页面就等于退出观战，不会"下次自动回到观战"
+            state.me = null;
+            state.roomId = m.roomId;
+            state.spectating = true;
+            emit('joined', m);
+            break;
+          }
+          state.spectating = false;
           state.me = { playerId: m.playerId };
           state.roomId = m.roomId;
           LS.set('df_token', m.token);
@@ -142,7 +159,7 @@ const Net = (() => {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const { roomId } = await res.json();
         LS.del('df_token');
-        open(roomId, name);
+        open(roomId, name, null, { spectate: false });
       } catch (e) {
         emit('error', '创建房间失败：' + e.message);
       }
@@ -161,7 +178,16 @@ const Net = (() => {
     joinRoom(roomId, name) {
       LS.set('df_name', name);
       LS.del('df_token');
-      open(String(roomId).toUpperCase(), name);
+      open(String(roomId).toUpperCase(), name, null, { spectate: false });
+    },
+
+    /** 观战：只读进房，不占席位、不下发任何人的坐标与手牌 */
+    watch(roomId) {
+      const r = String(roomId || '').trim().toUpperCase();
+      if (!r) { emit('error', '请输入对局码'); return false; }
+      LS.del('df_token');
+      open(r, null, null, { spectate: true });
+      return true;
     },
 
     send(obj) {
@@ -189,6 +215,7 @@ const Net = (() => {
       retire(sock);
       state.connected = false;
       state.view = null; state.room = null; state.me = null; state.roomId = null;
+      state.spectating = false;
       pendingRoom = null;
       pendingName = null;
       retry = 0;
@@ -201,6 +228,7 @@ const Net = (() => {
     get me() { return state.me; },
     get connected() { return state.connected; },
     get roomId() { return state.roomId; },
+    get spectating() { return state.spectating; },
     name() { return LS.get('df_name') || ''; },
     setName(n) { LS.set('df_name', n); },
     hasSession() { return !!(LS.get('df_token') && LS.get('df_room')); },

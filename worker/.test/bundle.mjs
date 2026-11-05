@@ -127,7 +127,7 @@ var require_cards = __commonJS({
             f.main = "\u9632\u5FA1 \u2264" + d.defense;
             f.sub = "\u53EA\u4FDD\u4EBA\uFF0C\u4E0D\u4FDD\u661F\u7CFB";
           } else if (d.escape) {
-            f.main = "\u6328\u6253\u540E\u8DC3\u8FC1";
+            f.main = "\u88AB\u6253\u51FB\u540E\u8DC3\u8FC1";
             f.sub = "\u5F03\u5168\u90E8\u80FD\u91CF\u4E0E\u5EFA\u9020";
           } else if (d.noResponse) {
             f.main = "\u53EF\u4E0D\u56DE\u5E94";
@@ -185,6 +185,10 @@ var require_cards = __commonJS({
       function familyName(key) {
         return CARD_DEFS[hideFace(key)].name;
       }
+      function demolishRefund(key) {
+        const def = CARD_DEFS[key];
+        return def && typeof def.cost === "number" ? Math.floor(def.cost / 2) : 0;
+      }
       return {
         INF,
         CARD_DEFS,
@@ -196,7 +200,8 @@ var require_cards = __commonJS({
         buildDeck,
         TOTAL_CARDS,
         hideFace,
-        familyName
+        familyName,
+        demolishRefund
       };
     });
   }
@@ -214,9 +219,9 @@ var require_rules = __commonJS({
       else Object.assign(root, api);
     })(typeof globalThis !== "undefined" ? globalThis : exports, function(C) {
       const { INF, CARD_DEFS, GALAXY_NAMES, ADJACENCY, galaxyDistance, buildDeck } = C;
+      const demolishRefund = C.demolishRefund || ((k) => CARD_DEFS[k] ? Math.floor(CARD_DEFS[k].cost / 2) : 0);
       const hideFace = C.hideFace || ((k) => k);
       const familyName = C.familyName || ((k) => CARD_DEFS[k] ? CARD_DEFS[k].name : k);
-      const BONUS_INCOME_CHANCE = 0.5;
       const MAX_TURNS = 240;
       const clone = (o) => JSON.parse(JSON.stringify(o));
       const shuffle = (arr) => {
@@ -231,7 +236,8 @@ var require_rules = __commonJS({
         let uidSeq = 0;
         const uid = () => "c" + ++uidSeq;
         const MODE = opts && opts.mode === "fast" ? "fast" : "standard";
-        const STRIKE_TARGET = opts && opts.strikeTarget === "hidden" ? "hidden" : "open";
+        const BROADCAST_WAIT = Number(opts && opts.broadcastWaitMs || 6e4);
+        const STRIKE_TARGET = opts && opts.strikeTarget === "open" ? "open" : "hidden";
         const blindStrikes = () => S.strikeTarget === "hidden";
         const alivePlayers = () => S.players.filter((p) => p.alive);
         const byId = (id) => S.players.find((p) => p.id === id);
@@ -279,7 +285,7 @@ var require_rules = __commonJS({
             markers: Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((g) => [g, { black: false, purple: false, red: false }])),
             broadcast: null,
             escapePending: null,
-            // 挨打时的光速飞船待决（只有被打者能回答）
+            // 被打击时的光速飞船待决（只有被打者能回答）
             log: [],
             arrow: null,
             winner: null,
@@ -289,6 +295,10 @@ var require_rules = __commonJS({
             // 本回合已行动次数（AI 用来判断何时收手）
             discardUsed: false,
             // 本回合是否已弃置过（每回合只能弃一次，但可一次弃多张）
+            roundNo: 0,
+            // 全场转完一圈 +1（座位号回绕时），阵亡者遗留打击按它推进
+            deadTickRound: 0,
+            // 阵亡者遗留打击已推进到第几轮（一轮只推一次）
             events: [],
             // 结构化公开事件（与日志同源，供 AI 记忆 / 复盘）
             eventSeq: 0,
@@ -332,8 +342,11 @@ var require_rules = __commonJS({
           S.step = "production";
           S.broadcast = null;
           S.actionCount = 0;
+          S.broadcastsThisTurn = 0;
           S.discardUsed = false;
           tickStrikes(p);
+          if (S.phase !== "playing") return;
+          tickDeadStrikes();
           if (S.phase !== "playing") return;
           if (!p.alive) {
             nextPlayer();
@@ -357,12 +370,10 @@ var require_rules = __commonJS({
             gain += def.income;
             detail.push(`${def.short}+${def.income}`);
           });
-          const bonus = Math.random() < BONUS_INCOME_CHANCE ? 1 : 0;
-          gain += bonus;
           const prodBefore = p.energy;
           p.energy += gain;
           noteEnergy(p, prodBefore, "production");
-          log(`${p.name} \u8FDB\u5165\u56DE\u5408\uFF1A\u57FA\u7840 1${bonus ? "\u3001\u968F\u673A\u8865\u7ED9 +1" : ""}${detail.length ? "\uFF0C" + detail.join("\u3001") : ""} \u2192 \u80FD\u91CF ${p.energy}`, "production");
+          log(`${p.name} \u8FDB\u5165\u56DE\u5408\uFF1A\u57FA\u7840 1${detail.length ? "\uFF0C" + detail.join("\u3001") : ""} \u2192 \u80FD\u91CF ${p.energy}`, "production");
           S.step = "action";
         }
         function tickStrikes(p) {
@@ -376,6 +387,24 @@ var require_rules = __commonJS({
             if (!S.escapePending) resolveStrike(st);
           });
         }
+        function tickDeadStrikes() {
+          const round = S.roundNo || 0;
+          if (S.deadTickRound === round) return;
+          S.deadTickRound = round;
+          const due = [];
+          S.players.forEach((p) => {
+            if (p.alive) return;
+            p.strikes.forEach((st) => {
+              if (st.resolved) return;
+              if (st.createdAtTurn === S.turnIndex) return;
+              st.progress++;
+              if (st.progress >= st.required) due.push(st);
+            });
+          });
+          due.forEach((st) => {
+            if (!S.escapePending && S.phase === "playing") resolveStrike(st);
+          });
+        }
         function advanceIfCurrentDead() {
           if (S.phase !== "playing") return false;
           const cur = S.players[S.currentIdx];
@@ -387,12 +416,14 @@ var require_rules = __commonJS({
         }
         function nextPlayer() {
           if (S.phase !== "playing") return;
+          const prevSeat = S.players[S.currentIdx].seat;
           let guard = 0;
           do {
             S.currentIdx = (S.currentIdx + 1) % S.players.length;
             guard++;
           } while (!S.players[S.currentIdx].alive && guard < S.players.length * 2);
           if (alivePlayers().length <= 1) return endGame();
+          if (S.players[S.currentIdx].seat <= prevSeat) S.roundNo = (S.roundNo || 0) + 1;
           S.turnIndex++;
           beginTurn();
         }
@@ -456,6 +487,24 @@ var require_rules = __commonJS({
           markActed();
           return { ok: true };
         }
+        function demolish(playerId, cardUid) {
+          const c = canAct(playerId);
+          if (!c.ok) return c;
+          const p = c.p;
+          const i = p.buildZone.findIndex((x) => x.uid === cardUid);
+          if (i < 0) return { ok: false, msg: "\u5EFA\u8BBE\u533A\u91CC\u6CA1\u6709\u8FD9\u5F20\u724C" };
+          const card = p.buildZone[i], def = CARD_DEFS[card.key];
+          const refund = demolishRefund(card.key);
+          p.buildZone.splice(i, 1);
+          const before = p.energy;
+          p.energy += refund;
+          noteEnergy(p, before, "demolish");
+          pushDiscard(card, p.id, { batch: nextBatch(), tag: "demolish" });
+          log(`${p.name} \u62C6\u9664\u300C${def.name}\u300D\uFF08+${refund} \u80FD\u91CF\uFF09`, "build");
+          ev("build_remove", { actor: p.id, card: card.key, refund });
+          markActed();
+          return { ok: true, refund };
+        }
         function playBroadcast(playerId, cardUid, targetGalaxy) {
           const c = canAct(playerId);
           if (!c.ok) return c;
@@ -499,11 +548,14 @@ var require_rules = __commonJS({
             stage: "collecting",
             createdAt: now,
             // 有人能回应：最多等 60 秒；没人能回应：随机等 5–20 秒后自动结算
-            deadline: now + (candidates.length ? 6e4 : 5e3 + Math.floor(Math.random() * 15001)),
+            deadline: now + (candidates.length ? BROADCAST_WAIT : 5e3 + Math.floor(Math.random() * 15001)),
             chooseDeadline: null
           };
-          log(`${p.name} \u53D1\u5E03\u300C${familyName(card.key)}\u300D\u2192 ${GALAXY_NAMES[targetGalaxy]}\uFF08\u8DDD\u79BB ${d}\uFF09`, "broadcast");
-          ev("broadcast_cast", { actor: p.id, family: hideFace(card.key), target: targetGalaxy, distance: d });
+          const radius = def.dist === INF ? null : def.dist;
+          const rangeText = radius === null ? "\u4EFB\u610F\u661F\u7CFB" : `\u8DDD\u76EE\u6807 \u2264 ${radius} \u683C`;
+          log(`${p.name} \u53D1\u5E03\u300C${familyName(card.key)}\u300D\u2192 ${GALAXY_NAMES[targetGalaxy]}\uFF08${rangeText}\uFF09`, "broadcast");
+          ev("broadcast_cast", { actor: p.id, family: hideFace(card.key), target: targetGalaxy, radius });
+          S.broadcastsThisTurn = (S.broadcastsThisTurn || 0) + 1;
           markActed();
           return { ok: true };
         }
@@ -715,22 +767,22 @@ var require_rules = __commonJS({
           const targets = S.players.filter((p) => p.alive && p.galaxy === st.targetGalaxy);
           const target = targets[0];
           if (!target) {
-            log(`\u300C${def.name}\u300D\u62B5\u8FBE ${GALAXY_NAMES[st.targetGalaxy]}\u2014\u2014\u7A7A\u65E0\u4E00\u4EBA\uFF0C\u6253\u51FB\u843D\u7A7A`, "strike");
+            log(`\u300C${def.name}\u300D\u62B5\u8FBE ${GALAXY_NAMES[st.targetGalaxy]}`, "strike");
             ev("strike_miss", { actor: st.casterId, card: st.key, target: st.targetGalaxy });
+            applyGalaxyEffects(st, def);
             if (caster) caster.strikes = caster.strikes.filter((s) => s !== st);
             pushDiscard({ uid: st.uid, key: st.key }, st.casterId, { batch: nextBatch(), tag: "discard" });
             return;
           }
           const defenders = target.buildZone.filter((b) => def.level !== INF && CARD_DEFS[b.key].defense >= def.level);
           const defended = defenders.length > 0;
-          const defName = defended ? CARD_DEFS[defenders[0].key].name : "";
           const wouldDie = !defended;
           if (def.disableBuilds) {
             const n = target.buildZone.length;
             discardAllBuilds(target);
             log(`${target.name}\uFF08${GALAXY_NAMES[st.targetGalaxy]}\uFF09\u7684 ${n} \u5F20\u5DF2\u5EFA\u5361\u724C\u88AB\u79D1\u6280\u9501\u6B7B\u62C6\u9664\uFF08\u73A9\u5BB6\u5B58\u6D3B\uFF0C\u80FD\u91CF\u4E0E\u624B\u724C\u4E0D\u53D7\u5F71\u54CD\uFF09`, "strike");
             ev("strike_hit", { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false, disabled: n });
-            finishStrike(st, caster, { noReward: true, targetGalaxy: st.targetGalaxy });
+            finishStrike(st, caster, { killed: false, targetGalaxy: st.targetGalaxy });
             return;
           }
           if (wouldDie && !target.lightshipUsed) {
@@ -753,19 +805,16 @@ var require_rules = __commonJS({
             }
           }
           if (defended) {
-            log(`${target.name}\uFF08${GALAXY_NAMES[st.targetGalaxy]}\uFF09\u7684\u300C${defName}\u300D\u6321\u4E0B\u4E86\u300C${def.name}\u300D`, "strike");
+            log(`\u300C${def.name}\u300D\u62B5\u8FBE ${GALAXY_NAMES[st.targetGalaxy]}`, "strike");
             ev("strike_hit", { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: true });
             applyGalaxyEffects(st, def);
-            if (def.key === "annihilate") {
-              discardAllBuilds(target);
-              log(`${target.name} \u5F03\u7F6E\u5168\u90E8\u5EFA\u8BBE\u724C`, "strike");
-            }
           } else {
-            eliminate(target, `\u88AB\u300C${def.name}\u300D\u547D\u4E2D \xB7 ${GALAXY_NAMES[st.targetGalaxy]}`);
+            eliminate(target, `\u88AB\u300C${def.name}\u300D\u547D\u4E2D`);
             ev("strike_hit", { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false });
             applyGalaxyEffects(st, def);
+            log(`\u300C${def.name}\u300D\u62B5\u8FBE ${GALAXY_NAMES[st.targetGalaxy]}`, "strike");
           }
-          finishStrike(st, caster);
+          finishStrike(st, caster, { killed: !defended });
         }
         function applyGalaxyEffects(st, def) {
           const g = st.targetGalaxy;
@@ -812,7 +861,7 @@ var require_rules = __commonJS({
             eliminate(target, `\u88AB\u300C${sdef.name}\u300D\u547D\u4E2D \xB7 ${GALAXY_NAMES[st.targetGalaxy]}`);
             ev("strike_hit", { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false });
             applyGalaxyEffects(st, sdef);
-            finishStrike(st, caster);
+            finishStrike(st, caster, { killed: true });
           }
           if (S.phase !== "playing") return { ok: true };
           const me = byId(playerId);
@@ -855,7 +904,7 @@ var require_rules = __commonJS({
           if (!empties.length) {
             log(`${target.name} \u542F\u52A8\u5149\u901F\u98DE\u8239\uFF0C\u4F46\u5DF2\u65E0\u7A7A\u661F\u7CFB\u53EF\u53BB`, "strike");
             eliminate(target, "\u65E0\u5904\u53EF\u9003");
-            finishStrike(st, byId(st.casterId));
+            finishStrike(st, byId(st.casterId), { killed: true });
             return;
           }
           const dest = empties[Math.floor(Math.random() * empties.length)];
@@ -863,16 +912,16 @@ var require_rules = __commonJS({
           target.galaxy = dest;
           log(`${target.name} \u542F\u52A8\u5149\u901F\u98DE\u8239\uFF0C\u64A4\u79BB ${GALAXY_NAMES[from]}\uFF08\u53BB\u5411\u4E0D\u660E\uFF1B\u5F03\u5168\u90E8\u5EFA\u8BBE\u724C\u4E0E\u80FD\u91CF\uFF09`, "strike");
           ev("lightship", { actor: target.id, from });
-          finishStrike(st, byId(st.casterId));
+          finishStrike(st, byId(st.casterId), { killed: false });
         }
         function finishStrike(st, caster, opts2) {
           const alive = alivePlayers().length;
-          if (!(opts2 && opts2.noReward) && caster && caster.alive) {
+          if (opts2 && opts2.killed && caster && caster.alive) {
             const reward = alive * 3;
             const rewardBefore = caster.energy;
             caster.energy += reward;
             noteEnergy(caster, rewardBefore, "reward");
-            log(`${caster.name} \u83B7\u5F97\u6E05\u573A\u5956\u52B1 +${reward} \u80FD\u91CF\uFF08\u5269\u4F59 ${alive} \u4EBA\uFF09`, "strike");
+            log(`${caster.name} \u83B7\u5F97\u6E05\u573A\u5956\u52B1 +${reward} \u80FD\u91CF\uFF08\u5269\u4F59 ${alive} \u4EBA\uFF09`, "reward");
           }
           if (caster) caster.strikes = caster.strikes.filter((s) => s !== st);
           const meta = { batch: nextBatch(), tag: "discard" };
@@ -892,11 +941,7 @@ var require_rules = __commonJS({
           ev("eliminate", { actor: p.id, galaxy: p.galaxy });
           const flying = p.strikes.filter((s) => !s.resolved);
           if (flying.length) {
-            p.strikes = p.strikes.filter((s) => s.resolved);
-            const fb = nextBatch();
-            flying.forEach((st) => pushDiscard({ uid: st.uid, key: st.key }, p.id, { batch: fb, tag: "discard" }));
-            log(`${p.name} \u5728\u98DE\u7684 ${flying.length} \u679A\u6253\u51FB\u5931\u53BB\u5236\u5BFC\uFF0C\u5760\u5165\u865A\u7A7A`, "elim");
-            flying.forEach((st) => ev("strike_void", blindStrikes() ? { actor: p.id, card: st.key } : { actor: p.id, card: st.key, target: st.targetGalaxy }));
+            log(`${p.name} \u5DF2\u6BC1\u706D\uFF0C\u4F46\u5B83\u53D1\u5C04\u7684 ${flying.length} \u679A\u6253\u51FB\u4ECD\u5728\u98DE\u884C`, "elim");
           }
           const hand = p.hand.splice(0, p.hand.length);
           const hb = nextBatch();
@@ -992,6 +1037,7 @@ var require_rules = __commonJS({
           byId,
           alivePlayers,
           playBuild,
+          demolish,
           playBroadcast,
           setResponse,
           responsesComplete,
@@ -1011,7 +1057,9 @@ var require_rules = __commonJS({
           hydrate(snapshot) {
             S = snapshot;
             S.mode = S.mode || "standard";
-            S.strikeTarget = S.strikeTarget === "hidden" ? "hidden" : "open";
+            S.strikeTarget = S.strikeTarget === "open" ? "open" : "hidden";
+            if (typeof S.roundNo !== "number") S.roundNo = 0;
+            if (typeof S.deadTickRound !== "number") S.deadTickRound = S.roundNo;
             S.events = S.events || [];
             S.eventSeq = S.eventSeq || (S.events.length ? S.events[S.events.length - 1].id : 0);
             return api;
@@ -1115,13 +1163,17 @@ var require_view = __commonJS({
         });
       }
       function discardEntry(d, S, hideStrikeTargets) {
+        const owner = (S.players || []).find((p) => p.id === d.ownerId);
         const out = {
           uid: d.uid,
           key: d.key,
           name: d.name,
           turn: d.turn,
           batch: d.batch || 0,
-          tag: d.tag || "discard"
+          tag: d.tag || "discard",
+          // 谁打出来的：窄屏没有空间画跨屏箭头，直接把名字写在牌块上
+          actor: d.ownerId || null,
+          actorName: owner ? owner.name : ""
         };
         if (hideStrikeTargets && d.key === "lock" && d.turn === S.turnIndex && d.targetGalaxy != null) {
           out.targetGalaxy = d.targetGalaxy;
@@ -1131,11 +1183,13 @@ var require_view = __commonJS({
       function viewFor2(game, playerId) {
         const S = game.state();
         if (!S) return null;
-        const me = S.players.find((p) => p.id === playerId);
+        const pid = playerId || null;
+        const me = pid ? S.players.find((p) => p.id === pid) : null;
+        const spectator = !me;
         const hideStrikeTargets = S.strikeTarget === "hidden";
         const players = S.players.map((p) => {
-          const base = publicPlayer(p, playerId, { hideStrikeTargets });
-          if (p.id === playerId) {
+          const base = publicPlayer(p, pid, { hideStrikeTargets });
+          if (me && p.id === pid) {
             base.galaxy = p.galaxy;
             base.hand = p.hand.map((c) => ({ uid: c.uid, key: c.key }));
             base.isMe = true;
@@ -1149,8 +1203,8 @@ var require_view = __commonJS({
         if (S.broadcast) {
           const B = S.broadcast;
           const collecting = B.stage === "collecting";
-          const myCand = B.candidates.find((c) => c.playerId === playerId);
-          const isCaster = B.casterId === playerId;
+          const myCand = pid ? B.candidates.find((c) => c.playerId === pid) : null;
+          const isCaster = !!pid && B.casterId === pid;
           broadcast = {
             casterId: B.casterId,
             // 广播牌的「合作 / 伪装」面要在结算时才翻：除发布者本人，谁都不下发真实 key
@@ -1160,7 +1214,7 @@ var require_view = __commonJS({
             deadline: B.deadline,
             chooseDeadline: B.chooseDeadline || null,
             // 我自己是不是就在被广播的星系（自己的坐标自己知道，不构成泄露）
-            iAmTarget: me.galaxy === B.targetGalaxy,
+            iAmTarget: !!me && me.galaxy === B.targetGalaxy,
             // 只给「有多少人能回应」这个聚合数，不给名单——
             // 名单等于公开「谁手里有能用的广播牌」，属于未打出的手牌信息
             candidateCount: B.candidates.length,
@@ -1172,8 +1226,8 @@ var require_view = __commonJS({
             } : null,
             // 收集阶段不下发任何人的回应；进入挑选阶段也只说"谁回应了"，
             // 不说是哪一面——面要等真正结算（翻开）后才公开，弃牌堆里有。
-            responders: collecting ? null : Object.entries(B.responses).filter(([, v]) => v).map(([pid]) => ({ playerId: pid })),
-            isMyChoice: !collecting && B.casterId === playerId,
+            responders: collecting ? null : Object.entries(B.responses).filter(([, v]) => v).map(([pid2]) => ({ playerId: pid2 })),
+            isMyChoice: !collecting && isCaster,
             iAmCaster: isCaster,
             myOptions: myCand ? myCand.options : null
           };
@@ -1181,10 +1235,12 @@ var require_view = __commonJS({
         let escape = null;
         if (S.escapePending) {
           const E = S.escapePending;
-          escape = E.targetId === playerId ? { mine: true, cardUid: E.cardUid, cardKey: E.cardKey, cost: E.cost, deadline: E.deadline } : { mine: false, targetId: E.targetId, deadline: E.deadline };
+          escape = pid && E.targetId === pid ? { mine: true, cardUid: E.cardUid, cardKey: E.cardKey, cost: E.cost, deadline: E.deadline } : { mine: false, targetId: E.targetId, deadline: E.deadline };
         }
         return {
           phase: S.phase,
+          spectator,
+          // 观战视图：没有「我」，全部按公开信息下发
           mode: S.mode || "standard",
           // standard / fast，前端据此显示规则与按钮
           // open（默认，全场可见打击目标） / hidden（只公开类型与已飞手数，落地才公布落点）
@@ -1196,6 +1252,7 @@ var require_view = __commonJS({
           thinking: false,
           // 由 server 层填充
           actionsThisTurn: S.actionCount || 0,
+          broadcastsThisTurn: S.broadcastsThisTurn || 0,
           discardUsed: !!S.discardUsed,
           players,
           deckCount: S.deck.length,
@@ -1212,7 +1269,7 @@ var require_view = __commonJS({
           endReason: S.endReason || null,
           // 结构化公开事件（与日志同源）：AI 的记忆来源，也是回放的原料。
           // 隐藏打击目标时，别人的发射/撤回/坠毁事件会被摘掉目的地。
-          events: visibleEvents(S, playerId),
+          events: visibleEvents(S, pid),
           log: S.log.slice(0, 60),
           me: me ? { id: me.id, seat: me.seat, name: me.name, galaxy: me.galaxy, alive: me.alive, energy: me.energy } : null,
           galaxyNames: GALAXY_NAMES
@@ -1265,13 +1322,19 @@ var require_ai = __commonJS({
           if (o.id === meId || !o.alive) continue;
           let cand = new Set(live);
           for (const e of memory) {
-            if (e.type === "strike_miss" || e.type === "strike_hit") {
-              cand.delete(e.target);
+            if (e.type === "strike_miss") {
+              if (e.actor === meId) cand.delete(e.target);
+              continue;
+            }
+            if (e.type === "strike_hit") {
+              if (!e.defended) cand.delete(e.target);
               continue;
             }
             if (e.actor !== o.id) continue;
             if (e.type === "broadcast_cast") {
-              cand = new Set([...cand].filter((g) => galaxyDistance(g, e.target) <= e.distance));
+              if (e.radius != null) {
+                cand = new Set([...cand].filter((g) => galaxyDistance(g, e.target) <= e.radius));
+              }
             } else if (e.type === "broadcast_response") {
               const lim = CARD_DEFS[e.card] ? CARD_DEFS[e.card].dist : 2;
               cand = new Set([...cand].filter((g) => galaxyDistance(g, e.target) <= lim));
@@ -1371,7 +1434,7 @@ var require_ai = __commonJS({
             const pick = pickBuild(me, builds, view);
             if (pick) return buildAction(pick);
           }
-          const casts = ofType("broadcast").filter((x) => energy >= x.def.cost + 1);
+          const casts = (view.broadcastsThisTurn || 0) < 1 ? ofType("broadcast").filter((x) => energy >= x.def.cost + 1) : [];
           if (casts.length) {
             const pick = pickProbe(view, me, cands, casts, memory);
             if (pick) return { type: "broadcast", uid: pick.card.uid, galaxy: pick.galaxy };
@@ -1427,7 +1490,7 @@ var require_ai = __commonJS({
                 const shield = o.buildZone.map((b) => CARD_DEFS[b.key].defense || 0).reduce((m, v) => Math.max(m, v), 0);
                 const blocked = lvl !== INF && shield >= lvl;
                 const hasShip = o.buildZone.some((b) => CARD_DEFS[b.key].escape);
-                const gain = blocked ? card.def.destroyBuilds ? 2.6 : 0.6 : hasShip ? 2 : 3 * alive;
+                const gain = blocked ? card.def.destroyBuilds ? 2.6 : 0.6 : hasShip ? 2 : 3 * Math.max(0, alive - 1);
                 exp += p * gain;
               }
               exp -= card.def.cost * 0.55;
@@ -1489,6 +1552,8 @@ var require_ai = __commonJS({
         switch (a.type) {
           case "build":
             return game.playBuild(playerId, a.uid);
+          case "demolish":
+            return game.demolish(playerId, a.uid);
           case "broadcast":
             return game.playBroadcast(playerId, a.uid, a.galaxy);
           case "strike":
@@ -1575,7 +1640,11 @@ var require_ai = __commonJS({
           if (S.step !== "action") break;
           const ai = ais.get(cur.id) || ais.set(cur.id, createAI(cur.id, seat.level, seat.seed || 1)).get(cur.id);
           const act = ai.decide(viewFor2(game, cur.id));
-          if (!act) return played;
+          if (!act) {
+            const end = applyAction(game, cur.id, { type: "end" });
+            played.push({ actor: cur.id, act: { type: "end" }, ok: end.ok });
+            break;
+          }
           const r = applyAction(game, cur.id, act);
           played.push({ actor: cur.id, act, ok: r.ok, msg: r.msg });
           if (!r.ok) {
@@ -1585,6 +1654,15 @@ var require_ai = __commonJS({
           }
           if (o.onStep) o.onStep(game);
           if (act.type === "end") continue;
+        }
+        const SS = game.state();
+        if (!played.length && SS && SS.phase === "playing" && !SS.broadcast && !SS.escapePending) {
+          const cur2 = SS.players[SS.currentIdx];
+          const seat2 = cur2 && getSeat(cur2.id);
+          if (seat2 && cur2.alive && SS.step === "action") {
+            const end = applyAction(game, cur2.id, { type: "end" });
+            played.push({ actor: cur2.id, act: { type: "end" }, ok: end.ok });
+          }
         }
         return played;
       }
@@ -1635,11 +1713,18 @@ var index_default = {
       return stub.fetch(request);
     }
     let pathname = url.pathname === "/" ? "/web/index.html" : url.pathname;
+    if (pathname.startsWith("/download/")) pathname = "/web" + pathname;
+    if (/^\/(favicon\.ico|favicon\.png|apple-touch-icon\.png)$/.test(pathname)) pathname = "/web" + pathname;
     const assetUrl = new URL(pathname + url.search, url);
-    return env.ASSETS.fetch(new Request(assetUrl.toString(), {
+    const assetRes = await env.ASSETS.fetch(new Request(assetUrl.toString(), {
       method: "GET",
       headers: request.headers
     }));
+    const h = new Headers(assetRes.headers);
+    for (const [k, v] of Object.entries(CORS)) h.set(k, v);
+    const ct = h.get("content-type") || "";
+    if (/^text\/css|javascript/i.test(ct) && !/charset/i.test(ct)) h.set("content-type", ct + "; charset=utf-8");
+    return new Response(assetRes.body, { status: assetRes.status, statusText: assetRes.statusText, headers: h });
   }
 };
 var Room = class {
@@ -1652,9 +1737,9 @@ var Room = class {
   async load() {
     if (this.data) return this.data;
     const saved = await this.ctx.storage.get("room");
-    this.data = saved || { id: null, seats: [], started: false, snap: null, createdAt: Date.now(), mode: "standard", strikeTarget: "open" };
+    this.data = saved || { id: null, seats: [], started: false, snap: null, createdAt: Date.now(), mode: "standard", strikeTarget: "hidden" };
     this.data.mode = this.data.mode || "standard";
-    this.data.strikeTarget = this.data.strikeTarget === "hidden" ? "hidden" : "open";
+    this.data.strikeTarget = this.data.strikeTarget === "open" ? "open" : "hidden";
     return this.data;
   }
   async save() {
@@ -1704,6 +1789,19 @@ var Room = class {
     const att = ws.deserializeAttachment() || {};
     const playerId = att.playerId;
     if (m.t === "hello") {
+      if (m.spectate) {
+        ws.serializeAttachment({ spectator: true });
+        this.send(ws, { t: "joined", roomId: this.data.id, spectator: true });
+        const game2 = this.gameFromSnap();
+        if (this.data.started && game2) {
+          this.data.snap = game2.state();
+          await this.save();
+          const v = viewFor(game2, null);
+          if (v) v.thinking = !!this.thinking;
+          this.send(ws, { t: "state", view: v });
+        } else this.pushLobby();
+        return;
+      }
       if (this.data.started && !m.token) {
         return this.send(ws, { t: "error", msg: "\u5BF9\u5C40\u5DF2\u5F00\u59CB\uFF0C\u65E0\u6CD5\u52A0\u5165" });
       }
@@ -1743,7 +1841,21 @@ var Room = class {
       } else this.pushLobby();
       return;
     }
-    if (!playerId) return this.send(ws, { t: "error", msg: "\u5C1A\u672A\u8FDB\u5165\u623F\u95F4" });
+    if (!playerId) {
+      const att0 = ws.deserializeAttachment() || {};
+      if (att0.spectator) {
+        if (m.t === "ping") return this.send(ws, { t: "pong", ts: Date.now() });
+        if (m.t === "leave") {
+          try {
+            ws.close();
+          } catch {
+          }
+          return;
+        }
+        return this.send(ws, { t: "error", msg: "\u89C2\u6218\u4E2D\u4E0D\u80FD\u64CD\u4F5C" });
+      }
+      return this.send(ws, { t: "error", msg: "\u5C1A\u672A\u8FDB\u5165\u623F\u95F4" });
+    }
     const seat = this.data.seats.find((s) => s.playerId === playerId);
     if (!seat) return this.send(ws, { t: "error", msg: "\u5E2D\u4F4D\u4E0D\u5B58\u5728" });
     if (m.t === "start") {
@@ -1842,6 +1954,8 @@ var Room = class {
     switch (a.type) {
       case "build":
         return game.playBuild(playerId, a.uid);
+      case "demolish":
+        return game.demolish(playerId, a.uid);
       case "broadcast":
         return game.playBroadcast(playerId, a.uid, a.galaxy);
       case "strike":
@@ -1905,9 +2019,9 @@ var Room = class {
     });
     return seats;
   }
-  /** 人机思考时长（毫秒）：默认 5–10 秒，可用环境变量调 */
+  /** 人机思考时长（毫秒）：默认 3–10 秒，可用环境变量调 */
   thinkMs() {
-    const min = Number(this.env && this.env.AI_THINK_MIN || 5e3);
+    const min = Number(this.env && this.env.AI_THINK_MIN || 3e3);
     const max = Number(this.env && this.env.AI_THINK_MAX || 1e4);
     return min + Math.floor(Math.random() * Math.max(0, max - min));
   }
@@ -2025,9 +2139,9 @@ var Room = class {
     if (!game) return;
     for (const ws of this.ctx.getWebSockets()) {
       const att = ws.deserializeAttachment();
-      if (!att || !att.playerId) continue;
+      if (!att || !att.playerId && !att.spectator) continue;
       try {
-        const v = viewFor(game, att.playerId);
+        const v = viewFor(game, att.spectator ? null : att.playerId);
         if (v) v.thinking = !!this.thinking;
         ws.send(JSON.stringify({ t: "state", view: v }));
       } catch {
@@ -2040,7 +2154,7 @@ var Room = class {
       hostId: this.data.seats[0] ? this.data.seats[0].playerId : null,
       started: this.data.started,
       mode: this.data.mode || "standard",
-      strikeTarget: this.data.strikeTarget === "hidden" ? "hidden" : "open",
+      strikeTarget: this.data.strikeTarget === "open" ? "open" : "hidden",
       seats: this.data.seats.map((s) => ({
         playerId: s.playerId,
         name: s.name,
@@ -2052,9 +2166,11 @@ var Room = class {
     };
     for (const ws of this.ctx.getWebSockets()) {
       const att = ws.deserializeAttachment();
-      if (!att || !att.playerId) continue;
+      if (!att || !att.playerId && !att.spectator) continue;
       try {
-        ws.send(JSON.stringify({ t: "lobby", room: summary, you: att.playerId }));
+        const msg = { t: "lobby", room: summary };
+        if (att.playerId) msg.you = att.playerId;
+        ws.send(JSON.stringify(msg));
       } catch {
       }
     }

@@ -78,6 +78,14 @@ function pushState(room) {
       send(seat.ws, { t: 'state', view: v });
     }
   }
+  // 观战者：playerId 传 null，拿到的是没有「我」的公开视图
+  for (const ws of room.watchers) {
+    if (ws.readyState === 1) {
+      const v = viewFor(room.game, null);
+      if (v) v.thinking = !!room.thinking;
+      send(ws, { t: 'state', view: v });
+    }
+  }
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -127,6 +135,9 @@ function pushLobby(room) {
       send(seat.ws, { t: 'lobby', room: room.summary(), you: seat.playerId });
     }
   }
+  for (const ws of room.watchers) {
+    if (ws.readyState === 1) send(ws, { t: 'lobby', room: room.summary() });
+  }
 }
 
 function handleAction(room, playerId, a) {
@@ -168,6 +179,20 @@ wss.on('connection', (ws, req) => {
       const room = getRoom(roomId);
       if (!room) return send(ws, { t: 'error', msg: '房间不存在或已过期' });
 
+      /* 观战：只读连接。不占席位、不发 token，也不会被当成某个玩家的重连 */
+      if (m.spectate) {
+        room.addWatcher(ws);
+        session = { roomId: room.id, spectator: true };
+        ws.roomId = room.id;
+        ws.spectator = true;
+        send(ws, { t: 'joined', roomId: room.id, spectator: true });
+        if (room.started && room.game) {
+          send(ws, { t: 'state', view: viewFor(room.game, null) });
+          driveAI(room);   // 幂等：若正卡在人机回合，这里会推进
+        } else pushLobby(room);
+        return;
+      }
+
       const r = m.token ? room.rejoin(m.token, ws) : room.join(m.name, ws);
       if (r.error) return send(ws, { t: 'error', msg: r.error });
 
@@ -188,6 +213,14 @@ wss.on('connection', (ws, req) => {
     if (!session) return send(ws, { t: 'error', msg: '尚未进入房间' });
     const room = getRoom(session.roomId);
     if (!room) return send(ws, { t: 'error', msg: '房间已失效' });
+
+    /* 观战者：只能 ping / 主动退出，任何会改变局面的消息一律拒绝 */
+    if (session.spectator) {
+      if (m.t === 'ping') return send(ws, { t: 'pong', ts: Date.now() });
+      if (m.t === 'leave') { room.removeWatcher(ws); session = null; return; }
+      return send(ws, { t: 'error', msg: '观战中不能操作' });
+    }
+
     const playerId = session.playerId;
 
     if (m.t === 'start') {
@@ -244,13 +277,12 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    if (session) {
-      const room = getRoom(session.roomId);
-      if (room) {
-        room.leave(session.playerId);
-        if (!room.started) pushLobby(room); else pushState(room);
-      }
-    }
+    if (!session) return;
+    const room = getRoom(session.roomId);
+    if (!room) return;
+    if (session.spectator) { room.removeWatcher(ws); return; }
+    room.leave(session.playerId);
+    if (!room.started) pushLobby(room); else pushState(room);
   });
 });
 

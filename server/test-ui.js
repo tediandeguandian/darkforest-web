@@ -36,9 +36,9 @@ w.eval(fs.readFileSync(path.join(ROOT, 'shared/rules.js'), 'utf8'));
 w.eval(fs.readFileSync(path.join(ROOT, 'shared/view.js'), 'utf8'));
 // 用假的 Net 驱动渲染：ui.js 只依赖 Net.view / Net.room / Net.me
 w.eval(`var Net = {
-  view: null, room: null, me: { playerId: 'p0' }, roomId: null, local: true, canLan: false,
+  view: null, room: null, me: { playerId: 'p0' }, roomId: null, local: true, canLan: false, spectating: false,
   __h: [],
-  on(fn){ this.__h.push(fn); }, act(){}, leave(){}, setMode(){}, setStrikeTarget(){}, addAI(){}, removeAI(){}, start(){},
+  on(fn){ this.__h.push(fn); }, act(){}, leave(){}, setMode(){}, setStrikeTarget(){}, addAI(){}, removeAI(){}, start(){}, watch(){},
   name(){ return ''; }, setName(){}, autoResume(){ return false; }, hasSession(){ return false; }, lanUrl(){ return null; }
 };`);
 w.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
@@ -956,6 +956,53 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     ok(conn.classList.contains('show'), 'setConnHint(true) 应能点亮');
     w.__setConnHint(false);
     ok(!conn.classList.contains('show'), 'setConnHint(false) 应能收起');
+  }
+
+  console.log('=== UI 24. 观战：没有手牌区，也不泄露任何位置 ===');
+  {
+    const g24 = createGame(['A', 'B', 'C'], { strikeTarget: 'hidden' });
+    const S24 = g24.state();
+    S24.players[0].galaxy = 1; S24.players[1].galaxy = 4; S24.players[2].galaxy = 6;
+    S24.players[0].energy = 20;
+    S24.players[0].hand = [{ uid: 'w1', key: 'nuke' }];
+    S24.currentIdx = 0; S24.step = 'action';
+    g24.playStrike('p0', 'w1', 4);
+
+    const v24 = viewFor(g24, null);
+    ok(v24.spectator === true, '观战视图应带 spectator 标记');
+    ok(v24.me === null, '观战视图没有「我」');
+    ok(v24.players.every(p => p.galaxy === null), '观战者看不到任何人的坐标');
+    ok(v24.players.every(p => p.hand === null), '观战者看不到任何人的手牌');
+    ok(v24.players.every(p => p.handCount >= 0), '手牌数量仍公开');
+
+    // 真渲染一遍：me 为 null 时不能让牌桌崩
+    w.Net.spectating = true;
+    w.Net.roomId = 'ABCDE';
+    w.Net.room = { roomId: 'ABCDE', seats: [] };
+    w.Net.view = v24;
+    w.Net.me = null;
+    w.__UI.gate = null;
+    w.__UI.turnKey = null;
+    let threw = null;
+    try { w.__render(); } catch (e) { threw = e; }
+    ok(!threw, '观战视图应能正常渲染，实际抛了 ' + (threw && threw.message));
+    const html24 = w.document.querySelector('#app').innerHTML;
+    ok(html24.indexOf('观战中') >= 0, '界面应标明正在观战');
+    ok(!w.document.querySelector('#hand'), '观战不该有手牌区');
+    ok(!w.document.querySelector('#handHead'), '观战不该有「我的手牌」那一行');
+    ok(!!w.document.querySelector('.mode-chip.spec'), '顶栏应有「观战」徽章');
+    ok((w.document.querySelector('#leaveBtn') || {}).textContent === '退出观战', '退出按钮应写「退出观战」');
+
+    // 大厅阶段（还没开局）也走观战文案
+    w.Net.view = null;
+    w.Net.room = { roomId: 'ABCDE', hostId: 'p0', seats: [{ playerId: 'p0', name: 'A', connected: true }], levels: [], mode: 'standard', strikeTarget: 'hidden' };
+    w.__render();
+    ok((w.document.querySelector('#leaveLobby') || {}).textContent === '退出观战', '大厅里观战者的返回按钮应写「退出观战」');
+    ok(/等房主开局/.test((w.document.querySelector('#lobbyWait') || {}).textContent || ''), '观战者应看到「等房主开局」');
+
+    w.Net.spectating = false;
+    w.Net.roomId = null;
+    w.Net.room = null;
   }
 
   console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);

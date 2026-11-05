@@ -150,6 +150,12 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
    现在按 socket 实例打 `_dfRetired` 标记（不用共享布尔：旧 socket 的回调是异步到的，
    共享标志早被下一次 `open()` 重置了），离开时先摘 `ws` 引用再关。
    提示条本身是 `index.html` 里的常驻节点，`render()` 不会重建它，显隐只能显式管。
+8. **观战是"没有我"的视图，别做成半个玩家** —— `viewFor(game, null)` 才是观战：
+   `spectator:true`、`me:null`，所有人的 `galaxy` / `hand` 都是 null。
+   观战者不占 `seats`、不发 token（发了就会顶掉原玩家的席位）、只能 ping/leave。
+   前端不要为它改几十处判空——`renderGame()` 给一副 `SPECTATOR_ME` 空壳顶上去，
+   所有 `find(p => p.id === v.me.id)` 自然落到兜底分支，再单独隐藏手牌区与操作栏。
+   **不要为了"看得爽"给观战者开上帝视角**：那等于把隐藏信息交给一个可以开麦的人。
 
 ---
 

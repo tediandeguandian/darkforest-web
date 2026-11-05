@@ -179,5 +179,39 @@ const after6 = room6.gameFromSnap().state();
 ok(after6.broadcast === null, 'alarm 应结算过期广播');
 ok(after6.players[0].energy === 11, '无人回应发布者 +1，实际 ' + after6.players[0].energy);
 
+console.log('=== 10. 观战：只读连接 ===');
+const ctx7 = makeCtx();
+const room7 = new Room(ctx7, env);
+await room7.fetch(new Request('https://do/init?room=SP01', { method: 'POST' }));
+const h7 = makeWS(), g7 = makeWS();
+ctx7.acceptWebSocket(h7); ctx7.acceptWebSocket(g7);
+await send(room7, h7, { t: 'hello', name: 'A' });
+await send(room7, g7, { t: 'hello', name: 'B' });
+await send(room7, h7, { t: 'start' });
+
+const wv = makeWS();
+ctx7.acceptWebSocket(wv);
+await send(room7, wv, { t: 'hello', spectate: true });
+const jv = wv.sent.find(x => x.t === 'joined');
+ok(!!jv && jv.spectator === true, '观战者应收到 spectator joined');
+ok(!!jv && !jv.playerId && !jv.token, '观战者不该拿到席位与重连 token');
+const sv = wv.sent.filter(x => x.t === 'state').pop();
+ok(!!sv && sv.view.spectator === true, '观战者应收到观战视图');
+ok(!!sv && sv.view.me === null, '观战视图没有「我」');
+ok(!!sv && sv.view.players.every(p => p.galaxy === null), '观战视图不下发任何人的坐标');
+ok(!!sv && sv.view.players.every(p => p.hand === null), '观战视图不下发任何人的手牌');
+ok(room7.data.seats.length === 2, '观战不应占席位，实际 ' + room7.data.seats.length);
+
+// 观战者操作：拒绝，且局面不变
+const turnBefore = room7.gameFromSnap().state().turnIndex;
+await send(room7, wv, { t: 'act', action: { type: 'end' } });
+ok(wv.sent.some(x => x.t === 'error' && /观战/.test(x.msg)), '观战者不能操作对局');
+ok(room7.gameFromSnap().state().turnIndex === turnBefore, '被拒的动作不该改变局面');
+
+// 玩家行动后，观战者要跟着收到新状态
+const beforeN = wv.sent.filter(x => x.t === 'state').length;
+await send(room7, h7, { t: 'act', action: { type: 'end' } });
+ok(wv.sent.filter(x => x.t === 'state').length > beforeN, '玩家行动后观战者应收到新 state');
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail ? 1 : 0);

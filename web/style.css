@@ -524,6 +524,7 @@ a{color:var(--cyan)}
 }
 .mode-chip.fast{color:var(--green);border-color:rgba(99,191,144,.32);background:var(--green-dim)}
 .mode-chip.blind{color:var(--violet);border-color:rgba(157,141,242,.34);background:var(--violet-dim)}
+.mode-chip.spec{color:var(--gold);border-color:rgba(232,180,95,.38);background:rgba(232,180,95,.10)}
 .hbtn{
   padding:5px 12px;border-radius:var(--r-s);cursor:pointer;
   background:rgba(8,11,17,.45);border:1px solid var(--line);
@@ -799,6 +800,24 @@ a{color:var(--cyan)}
   background:linear-gradient(180deg,rgba(10,13,20,.55),rgba(8,11,17,.92));
   border-top:1px solid var(--line);
   backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
+}
+/* 观战：没有手牌，这一条只放一句说明，高度与手牌区接近，牌桌不会被"抽掉"一截 */
+.mybar.spectating{justify-content:center;min-height:74px}
+.spec-note{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;
+  font-size:12px;color:var(--txt-2);letter-spacing:.4px;text-align:center;
+}
+.spec-note b{color:var(--gold);font-weight:600;letter-spacing:1px}
+.spec-note .dim{font-size:11px}
+.spec-dot{
+  width:7px;height:7px;border-radius:50%;background:var(--gold);
+  box-shadow:0 0 0 0 rgba(232,180,95,.5);animation:specPulse 2.2s ease-out infinite;
+  animation-delay:var(--ph-a,0ms);
+}
+@keyframes specPulse{
+  0%{box-shadow:0 0 0 0 rgba(232,180,95,.45)}
+  70%{box-shadow:0 0 0 7px rgba(232,180,95,0)}
+  100%{box-shadow:0 0 0 0 rgba(232,180,95,0)}
 }
 .my-line{
   display:flex;align-items:center;gap:10px;min-height:28px;flex-wrap:wrap;
@@ -1608,6 +1627,11 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   .dlg-head{padding:14px 12px 10px 16px}
   .dlg-body{padding:16px}
   .dlg-foot{padding:10px 12px 14px}
+  /* 观战多一个「观战」徽章，窄屏顶栏放不下：收起回合说明与房间号
+     （牌桌里还有「即将出牌」，房间号在底部观战条里也写着） */
+  body.spectating .hud-turn{display:none}
+  body.spectating .hud .brand .room{display:none}
+  body.spectating .hbtn{padding:5px 9px;font-size:10.5px}
 }
 @media (max-height:700px) and (min-width:1101px){
   .hud{height:46px}

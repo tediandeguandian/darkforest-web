@@ -22,6 +22,7 @@ class Room {
     this.seats = [];        // { playerId, token, name, ws, connected, isAI, aiLevel, aiSeed }
     this.game = null;
     this.started = false;
+    this.watchers = new Set(); // 观战者的 socket：只读，不占席位，断开即消失
     this.aiRunning = false;
     this.thinking = false;   // 人机是否正在"思考"（前端显示倒计时/思考中）
     this.aiSeq = 0;
@@ -98,6 +99,17 @@ class Room {
     return { playerId: seat.playerId, seat: this.seats.indexOf(seat) };
   }
 
+  addWatcher(ws) {
+    this.watchers.add(ws);
+    this.lastActive = Date.now();
+    return { spectator: true };
+  }
+
+  removeWatcher(ws) {
+    this.watchers.delete(ws);
+    this.lastActive = Date.now();
+  }
+
   leave(playerId) {
     // 对局中只标记断开，保留席位以便重连
     const seat = this.seats.find(s => s.playerId === playerId);
@@ -164,7 +176,7 @@ function getRoom(id) {
 function sweep(maxIdleMs = 3 * 3600 * 1000) {
   const now = Date.now();
   for (const [id, r] of rooms) {
-    const anyOnline = r.seats.some(s => s.connected && !s.isAI);
+    const anyOnline = r.seats.some(s => s.connected && !s.isAI) || r.watchers.size > 0;
     if (!anyOnline && now - r.lastActive > maxIdleMs) rooms.delete(id);
   }
 }

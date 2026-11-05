@@ -114,6 +114,30 @@ ok(Net.connected === false, '掉线后应标记未连接');
   ok(events.includes('open'), '重连成功应派发 open（提示条要收）');
   ok(Net.connected === true, '重连后应恢复已连接状态');
 
+  console.log('=== NET 6. 观战：不发 token，也不写会话 ===');
+  events.length = 0;
+  Net.leave();
+  Net.watch('abcd');
+  const s6 = socks[socks.length - 1];
+  s6._open();
+  const hello6 = JSON.parse(s6.sent[0] || '{}');
+  ok(hello6.t === 'hello' && hello6.spectate === true, '观战握手应带 spectate 标记');
+  ok(!hello6.token, '观战握手不该带 token（否则会顶掉原玩家的席位）');
+
+  events.length = 0;
+  s6._msg({ t: 'joined', roomId: 'ABCD', spectator: true });
+  ok(Net.spectating === true, '应标记为观战中');
+  ok(Net.me === null, '观战者没有 me');
+  ok(w.localStorage.getItem('df_room') === null, '观战不该写 df_room（刷新即退出，不该自动回到观战）');
+
+  s6._msg({ t: 'state', view: { spectator: true, me: null, players: [] } });
+  ok(Net.view && Net.view.spectator === true, '应收到观战视图');
+
+  events.length = 0;
+  Net.leave();
+  ok(Net.spectating === false, '离开观战应清掉标记');
+  ok(Net.view === null && Net.roomId === null, '离开后状态应清空');
+
   console.log(`\n结果：${pass} 通过，${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();

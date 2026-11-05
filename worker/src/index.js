@@ -157,6 +157,23 @@ export class Room {
 
     /* 握手：token 重连，否则占座 */
     if (m.t === 'hello') {
+      /* 观战：只读连接。attachment 里只记 spectator，不写 playerId——
+         这样下面所有需要席位的分支都不会把它当成玩家。 */
+      if (m.spectate) {
+        ws.serializeAttachment({ spectator: true });
+        this.send(ws, { t: 'joined', roomId: this.data.id, spectator: true });
+        const game = this.gameFromSnap();
+        if (this.data.started && game) {
+          // 数据可能是别的 isolate 写的，先落一次再算视图
+          this.data.snap = game.state();
+          await this.save();
+          const v = viewFor(game, null);
+          if (v) v.thinking = !!this.thinking;
+          this.send(ws, { t: 'state', view: v });
+        } else this.pushLobby();
+        return;
+      }
+
       if (this.data.started && !m.token) {
         return this.send(ws, { t: 'error', msg: '对局已开始，无法加入' });
       }
@@ -198,7 +215,15 @@ export class Room {
       return;
     }
 
-    if (!playerId) return this.send(ws, { t: 'error', msg: '尚未进入房间' });
+    if (!playerId) {
+      const att0 = ws.deserializeAttachment() || {};
+      if (att0.spectator) {
+        if (m.t === 'ping') return this.send(ws, { t: 'pong', ts: Date.now() });
+        if (m.t === 'leave') { try { ws.close(); } catch {} return; }
+        return this.send(ws, { t: 'error', msg: '观战中不能操作' });
+      }
+      return this.send(ws, { t: 'error', msg: '尚未进入房间' });
+    }
     const seat = this.data.seats.find(s => s.playerId === playerId);
     if (!seat) return this.send(ws, { t: 'error', msg: '席位不存在' });
 
@@ -495,9 +520,9 @@ export class Room {
     if (!game) return;
     for (const ws of this.ctx.getWebSockets()) {
       const att = ws.deserializeAttachment();
-      if (!att || !att.playerId) continue;
+      if (!att || (!att.playerId && !att.spectator)) continue;
       try {
-        const v = viewFor(game, att.playerId);
+        const v = viewFor(game, att.spectator ? null : att.playerId);
         if (v) v.thinking = !!this.thinking;
         ws.send(JSON.stringify({ t: 'state', view: v }));
       } catch {}
@@ -519,9 +544,11 @@ export class Room {
     };
     for (const ws of this.ctx.getWebSockets()) {
       const att = ws.deserializeAttachment();
-      if (!att || !att.playerId) continue;
+      if (!att || (!att.playerId && !att.spectator)) continue;
       try {
-        ws.send(JSON.stringify({ t: 'lobby', room: summary, you: att.playerId }));
+        const msg = { t: 'lobby', room: summary };
+        if (att.playerId) msg.you = att.playerId;
+        ws.send(JSON.stringify(msg));
       } catch {}
     }
   }
