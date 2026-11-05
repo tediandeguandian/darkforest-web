@@ -154,6 +154,9 @@ body.in-game::after{
   #app::before{background-position:48% 34%}
 }
 
+/* [hidden] 要压过 .btn{display:inline-flex} 这类作者样式 */
+[hidden]{display:none!important}
+
 /* ============================================================
  * 3. 通用件
  * ============================================================ */
@@ -273,7 +276,9 @@ a{color:var(--cyan)}
   padding:44px 38px 34px;border-radius:var(--r-xl);
   background:var(--glass);border:1px solid var(--line);box-shadow:var(--sh-3);
   backdrop-filter:blur(var(--blur));-webkit-backdrop-filter:blur(var(--blur));
-  animation:panelIn var(--dur-3) var(--ease-out) both;
+  /* 注意：这里不要挂常驻 animation。大厅现在是局部更新，但入口页仍会整块重建；
+     挂在这里就得靠 .scene-in 的"提前摘类"来兜底，反而会把入场动画掐断在中途。
+     入场上行交给 `.scene-in > *`。 */
 }
 /* 顶部一道极细的琥珀光，代替以前的粗边框 */
 .lobby::before{
@@ -396,20 +401,28 @@ a{color:var(--cyan)}
 
 /* 添加对手 */
 .fold{border:1px solid var(--hair);border-radius:var(--r-m);background:rgba(8,11,17,.34);margin-bottom:10px;overflow:hidden}
-.fold summary{
-  display:flex;align-items:center;justify-content:space-between;gap:8px;
-  padding:11px 13px;cursor:pointer;list-style:none;
+.fold-head{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;
+  padding:11px 13px;cursor:pointer;list-style:none;text-align:left;
+  background:none;border:0;font-family:inherit;
   font-size:12px;color:var(--txt-2);letter-spacing:.4px;
   transition:background var(--dur-2) var(--ease),color var(--dur-2) var(--ease);
 }
-.fold summary::-webkit-details-marker{display:none}
-.fold summary::after{
+.fold-head::after{
   content:'+';order:3;margin-left:auto;color:var(--faint);
   font-size:15px;line-height:1;transition:transform var(--dur-2) var(--ease),color var(--dur-2) var(--ease);
 }
-.fold[open] summary::after{content:'−';color:var(--gold)}
-.fold summary:hover{background:rgba(152,175,208,.05);color:var(--txt)}
-.fold summary span{font-size:10.5px;color:var(--faint);letter-spacing:0;margin-left:auto;margin-right:10px}
+.fold[data-open="1"] .fold-head::after{content:'−';color:var(--gold)}
+.fold-head:hover{background:rgba(152,175,208,.05);color:var(--txt)}
+.fold-title{font-size:12px}
+.fold-note{font-size:10.5px;color:var(--faint);letter-spacing:0;margin-left:auto;margin-right:10px;white-space:nowrap}
+/* 高度由 JS 写成具体像素再过渡（<details> 收起时内容直接 display:none，做不出动画） */
+.fold-body{
+  overflow:hidden;height:0;
+  transition:height var(--dur-3) var(--ease),opacity var(--dur-2) var(--ease);
+}
+.fold[data-open="0"] .fold-body{opacity:0}
+.fold[data-open="1"] .fold-body{opacity:1}
 .ai-levels{display:flex;flex-direction:column;gap:5px;padding:0 8px 8px}
 .ai-btn{
   display:grid;grid-template-columns:1fr auto;grid-template-areas:"n r" "b b";

@@ -31,6 +31,7 @@ const UI = {
   logTop: null,        // 上一帧最新一条战报的标识
   calloutHTML: null,   // 上一帧中央提示的内容，变了才播换字动画
   seatSet: null,       // Set(pid)：大厅里已出现过的席位
+  aiFoldOpen: null,    // 大厅「添加对手」是否展开（用户手动切过就以他为准）
   deckCount: null,     // 上一帧牌库数，变了让数字跳一下
   arrowRaf: 0,         // 箭头层当前挂着的 rAF 句柄（0 = 没有链在跑）
   arrowHtml: '',       // 上一帧画出来的 SVG，一样就不再写 DOM
@@ -669,104 +670,202 @@ const LEVEL_FALLBACK = [
   { key: 'sophon',      name: '智子',   retention: 1.00, blurb: '记得每一个公开事件' },
 ];
 
-function renderLobby() {
-  clearOverlays();
-  const room = Net.room;
-  if (!room) return renderEntry();
-  const isHost = room.hostId === Net.me?.playerId;
-  const levels = (room.levels && room.levels.length) ? room.levels : LEVEL_FALLBACK;
-  const lvName = k => (levels.find(l => l.key === k) || {}).name || k;
-  const aiCount = room.seats.filter(s => s.isAI).length;
-  const free = 9 - room.seats.length;
-  const modeName = room.mode === 'fast' ? '快速' : '标准';
-  const targetName = room.strikeTarget === 'hidden' ? '目标隐藏' : '目标公开';
-
-  const seenSeats = UI.seatSet;
-  const seats = room.seats.map((s, i) => `
-    <div class="seat${s.isAI ? ' ai' : ''}${seenSeats && !seenSeats.has(s.playerId) ? ' is-new' : ''}">
-      <span class="seat-name"><span class="dot ${s.connected ? '' : 'off'}"></span>${esc(s.name)}
-        ${s.playerId === Net.me?.playerId ? '<span class="badge-you">你</span>' : ''}
-        ${s.isAI ? `<span class="badge ai">对手 · ${esc(lvName(s.aiLevel))}</span>` : ''}</span>
-      <span class="seat-right">
-        ${i === 0 ? '<span class="host">房主</span>' : ''}
-        ${(isHost && s.isAI) ? `<button class="mini-x" data-remove="${s.playerId}" title="移除这位对手">×</button>` : ''}
-      </span>
-    </div>`).join('') || '<div class="dim small" style="padding:12px">还没有其他玩家</div>';
-  UI.seatSet = new Set(room.seats.map(s => s.playerId));
-
-  $('#app').innerHTML = `
+/* 大厅骨架：只建一次，之后都在这套节点上改文本、增删席位。
+   以前每次状态推送都拿 innerHTML 整块重建：面板重播入场、折叠菜单被打回初始态、
+   席位列表滚动位置归零——加一个人机，整页就"跳一下"。 */
+const LOBBY_TPL = `
     <div class="lobby lobby-room">
-      ${isHost ? `<button class="icon-btn" id="settingsBtn" title="对局设置" aria-label="对局设置">${GEAR}</button>` : ''}
+      <button class="icon-btn" id="settingsBtn" title="对局设置" aria-label="对局设置">${GEAR}</button>
       <header class="lobby-head">
         <h1>三体 · 黑暗森林</h1>
-        <p class="sub">${room.seats.length}/9 位文明就位${aiCount ? ` · ${aiCount} 位对手` : ''}</p>
-        <div class="roomcode">${esc(room.roomId)}</div>
+        <p class="sub" id="lobbySub"></p>
+        <div class="roomcode" id="lobbyCode"></div>
         <div class="dim small">把这个号发给朋友，或直接加几位对手开打</div>
       </header>
 
       <div class="lobby-grid">
         <section class="lobby-col">
-          <div class="col-title">席位 <span>${room.seats.length}/9</span></div>
-          <div class="seatlist">${seats}</div>
+          <div class="col-title">席位 <span id="seatCount"></span></div>
+          <div class="seatlist" id="seatList"></div>
         </section>
 
         <section class="lobby-col">
-          ${isHost ? `
-            <details class="fold" id="aiFold" ${aiCount ? '' : 'open'}>
-              <summary>添加对手 <span>${free > 0 ? `还可加 ${free} 位` : '已满 9 人'}</span></summary>
-              <div class="ai-levels">
-                ${levels.map(l => `
-                  <button class="ai-btn" data-level="${l.key}" ${free <= 0 ? 'disabled' : ''} title="${esc(l.blurb)}">
-                    <b>${esc(l.name)}</b>
-                    <span class="ai-ret">记忆 ${Math.round(l.retention * 100)}%</span>
-                    <span class="ai-blurb">${esc(l.blurb)}</span>
-                  </button>`).join('')}
-              </div>
-            </details>
+          <div class="fold" id="aiFold" data-open="1">
+            <button class="fold-head" id="aiFoldBtn" type="button" aria-expanded="true" aria-controls="aiLevels">
+              <span class="fold-title">添加对手</span>
+              <span class="fold-note" id="aiNote"></span>
+            </button>
+            <div class="fold-body" id="aiLevels"><div class="ai-levels" id="aiLevelsInner"></div></div>
+          </div>
 
-            <div class="rule-line">
-              <span>${modeName}对局</span><i>·</i><span>${targetName}</span>
-              <button class="rule-edit" id="settingsBtn2">调整</button>
-            </div>
+          <div class="rule-line">
+            <span id="ruleMode"></span><i>·</i><span id="ruleTarget"></span>
+            <button class="rule-edit" id="settingsBtn2" type="button">调整</button>
+          </div>
 
-            <div class="lobby-actions">
-              <button class="btn primary" id="startBtn" ${room.seats.length < 2 ? 'disabled' : ''}>
-                开始对局
-              </button>
-              <button class="btn ghost" id="leaveLobby">返回</button>
-            </div>
-            ${room.seats.length < 2 ? '<p class="dim small" style="margin-top:8px">至少需要 2 位玩家（可以加对手）</p>' : ''}
-          ` : `
-            <div class="rule-line">
-              <span>${modeName}对局</span><i>·</i><span>${targetName}</span>
-            </div>
-            <p class="dim small">等房主开局…</p>
-            <div class="lobby-actions">
-              <button class="btn ghost" id="leaveLobby">返回</button>
-            </div>
-          `}
+          <p class="dim small" id="lobbyWait" style="margin-top:4px" hidden>等房主开局…</p>
+          <div class="lobby-actions">
+            <button class="btn primary" id="startBtn" disabled>开始对局</button>
+            <button class="btn ghost" id="leaveLobby" type="button">返回</button>
+          </div>
+          <p class="dim small" id="lobbyNeed" style="margin-top:8px" hidden>至少需要 2 位玩家（可以加对手）</p>
         </section>
       </div>
     </div>`;
 
-  const b = $('#startBtn');
-  if (b) b.addEventListener('click', () => Net.start());
+const setTxt = (sel, v) => { const n = $(sel); if (n && n.textContent !== v) n.textContent = v; };
+const showEl = (sel, on) => { const n = $(sel); if (n && n.hidden === on) n.hidden = !on; };
 
-  const gear = () => openSettings();
-  $('#settingsBtn')?.addEventListener('click', gear);
-  $('#settingsBtn2')?.addEventListener('click', gear);
+/* 建骨架 + 一次性绑事件。之后的局部更新不会再走这里。 */
+function mountLobby() {
+  $('#app').innerHTML = LOBBY_TPL;
+  $('#settingsBtn').addEventListener('click', openSettings);
+  $('#settingsBtn2').addEventListener('click', openSettings);
+  $('#leaveLobby').addEventListener('click', () => { Net.leave(); render(); });
+  $('#startBtn').addEventListener('click', () => Net.start());
+  $('#aiFoldBtn').addEventListener('click', toggleAIFold);
+  // 事件委托：里面的按钮会被局部重建，绑在容器上就不用每次重绑
+  $('#aiLevelsInner').addEventListener('click', e => {
+    const b = e.target.closest ? e.target.closest('.ai-btn') : null;
+    if (b && !b.disabled) Net.addAI(b.dataset.level);
+  });
+  $('#seatList').addEventListener('click', e => {
+    const b = e.target.closest ? e.target.closest('[data-remove]') : null;
+    if (b) Net.removeAI(b.dataset.remove);
+  });
+  return $('#app .lobby-room');
+}
 
-  $('#leaveLobby')?.addEventListener('click', () => {
-    Net.leave();
-    render();
+function toggleAIFold() {
+  const fold = $('#aiFold');
+  if (!fold) return;
+  const open = fold.dataset.open !== '1';
+  UI.aiFoldOpen = open;
+  foldSet(fold, open, true);
+}
+
+/* 折叠面板的高度过渡。
+   <details> 天生做不出"收起时滑上去"（内容直接 display:none），所以自己管高度：
+   固定起点 → 强制回流 → 目标值，收尾再放回 auto。 */
+function foldSet(fold, open, animate) {
+  if (!fold) return;
+  const body = fold.querySelector('.fold-body');
+  const head = fold.querySelector('.fold-head');
+  fold.dataset.open = open ? '1' : '0';
+  if (head) head.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (!body) return;
+  const seq = (fold.__seq = (fold.__seq || 0) + 1);
+  const settle = () => { if (fold.__seq === seq) body.style.height = open ? 'auto' : '0px'; };
+  const from = body.getBoundingClientRect().height;
+  const to = open ? body.scrollHeight : 0;
+  // jsdom 里量出来都是 0，直接落终态；正常浏览器里 from≠to 才播过渡
+  if (!animate || Math.abs(from - to) < 1) return settle();
+  body.style.height = from + 'px';
+  void body.offsetHeight;
+  body.style.height = to + 'px';
+  body.addEventListener('transitionend', function onEnd(e) {
+    if (e.target !== body || e.propertyName !== 'height') return;
+    body.removeEventListener('transitionend', onEnd);
+    settle();
+  });
+}
+
+/* 席位列表：按 playerId 复用节点，只有新来的才播入场 */
+function paintSeats(room, isHost, levels) {
+  const list = $('#seatList');
+  if (!list) return;
+  const seen = UI.seatSet;
+  const meId = Net.me?.playerId;
+  const lvName = k => (levels.find(l => l.key === k) || {}).name || k;
+  const pool = new Map();
+  list.querySelectorAll('.seat').forEach(n => pool.set(n.dataset.pid, n));
+  const keep = [];
+
+  room.seats.forEach((s, i) => {
+    // 内容没变就连 DOM 都不碰——否则每加一个人机，别的席位也会闪一下
+    const sig = [s.name, s.connected ? 1 : 0, s.isAI ? 1 : 0, s.aiLevel || '',
+                 i === 0 ? 1 : 0, s.playerId === meId ? 1 : 0, (isHost && s.isAI) ? 1 : 0].join('|');
+    let node = pool.get(s.playerId);
+    if (!node || node.dataset.sig !== sig) {
+      const isNew = !seen || !seen.has(s.playerId);
+      const fresh = el('div', 'seat' + (s.isAI ? ' ai' : '') + (isNew ? ' is-new' : ''));
+      fresh.dataset.pid = s.playerId;
+      fresh.dataset.sig = sig;
+      fresh.innerHTML = `
+      <span class="seat-name"><span class="dot ${s.connected ? '' : 'off'}"></span>${esc(s.name)}
+        ${s.playerId === meId ? '<span class="badge-you">你</span>' : ''}
+        ${s.isAI ? `<span class="badge ai">对手 · ${esc(lvName(s.aiLevel))}</span>` : ''}</span>
+      <span class="seat-right">
+        ${i === 0 ? '<span class="host">房主</span>' : ''}
+        ${(isHost && s.isAI) ? `<button class="mini-x" data-remove="${esc(s.playerId)}" title="移除这位对手">×</button>` : ''}
+      </span>`;
+      // 入场播完就摘掉，免得之后被谁移动一下又重播
+      if (isNew) fresh.addEventListener('animationend', () => fresh.classList.remove('is-new'), { once: true });
+      if (node) node.replaceWith(fresh); else list.appendChild(fresh);
+      node = fresh;
+    }
+    pool.delete(s.playerId);
+    keep.push(node);
   });
 
-  document.querySelectorAll('.ai-btn').forEach(btn => {
-    btn.addEventListener('click', () => Net.addAI(btn.dataset.level));
-  });
-  document.querySelectorAll('[data-remove]').forEach(btn => {
-    btn.addEventListener('click', () => Net.removeAI(btn.dataset.remove));
-  });
+  pool.forEach(n => n.remove());
+  // 顺序跟着 room.seats 走：只在真的换了位置时才 insertBefore
+  keep.forEach((n, i) => { if (list.children[i] !== n) list.insertBefore(n, list.children[i] || null); });
+}
+
+function paintAILevels(levels, free) {
+  const inner = $('#aiLevelsInner');
+  if (!inner) return;
+  const sig = levels.map(l => `${l.key}/${l.name}/${l.retention}`).join(',') + '|' + (free > 0 ? 1 : 0);
+  if (inner.dataset.sig === sig) return;
+  inner.dataset.sig = sig;
+  inner.innerHTML = levels.map(l => `
+      <button class="ai-btn" data-level="${l.key}" ${free <= 0 ? 'disabled' : ''} title="${esc(l.blurb)}">
+        <b>${esc(l.name)}</b>
+        <span class="ai-ret">记忆 ${Math.round(l.retention * 100)}%</span>
+        <span class="ai-blurb">${esc(l.blurb)}</span>
+      </button>`).join('');
+}
+
+function renderLobby() {
+  clearOverlays();
+  const room = Net.room;
+  if (!room) return renderEntry();
+
+  if (!$('#app .lobby-room')) mountLobby();
+  const isHost = room.hostId === Net.me?.playerId;
+  const levels = (room.levels && room.levels.length) ? room.levels : LEVEL_FALLBACK;
+  const aiCount = room.seats.filter(s => s.isAI).length;
+  const free = 9 - room.seats.length;
+
+  setTxt('#lobbySub', `${room.seats.length}/9 位文明就位${aiCount ? ` · ${aiCount} 位对手` : ''}`);
+  setTxt('#lobbyCode', room.roomId);
+  setTxt('#seatCount', `${room.seats.length}/9`);
+  setTxt('#ruleMode', `${room.mode === 'fast' ? '快速' : '标准'}对局`);
+  setTxt('#ruleTarget', room.strikeTarget === 'hidden' ? '目标隐藏' : '目标公开');
+  setTxt('#aiNote', free > 0 ? `还可加 ${free} 位` : '已满 9 人');
+
+  showEl('#settingsBtn', isHost);
+  showEl('#settingsBtn2', isHost);
+  showEl('#aiFold', isHost);
+  showEl('#startBtn', isHost);
+  showEl('#lobbyNeed', isHost && room.seats.length < 2);
+  showEl('#lobbyWait', !isHost);
+  const sb = $('#startBtn');
+  if (sb) sb.disabled = room.seats.length < 2;
+
+  paintSeats(room, isHost, levels);
+  paintAILevels(levels, free);
+
+  // 折叠面板的展开状态只在第一帧定初值，之后完全交给用户。
+  // 以前是 aiCount ? '' : 'open'——加第一个人机就把菜单硬收起来，正是"跳一下"的元凶。
+  const fold = $('#aiFold');
+  if (fold && fold.dataset.ready !== '1') {
+    fold.dataset.ready = '1';
+    const open = UI.aiFoldOpen == null ? !aiCount : UI.aiFoldOpen;
+    UI.aiFoldOpen = open;
+    foldSet(fold, open, false);
+  }
 }
 
 /* 对局设置：收在右上角的齿轮里，不占大厅版面 */
@@ -2011,19 +2110,24 @@ function render() {
   // 换场景：上一局"看过什么"全部作废，新一局的牌才会重新发一遍
   if (scene !== UI.scene) resetSceneFx();
 
-  /* 入场动画还没播完（720ms 内）又来一次状态推送：先把 scene-in 摘掉再重绘。
-     否则新画出来的 .hud/.board/.mybar 会把整屏入场从头再播一遍，
-     表现就是"刚进牌桌，牌桌又闪了一下"。markScene 在下面，会按需重新挂。 */
-  if (UI.sceneTimer) {
-    clearTimeout(UI.sceneTimer);
-    UI.sceneTimer = null;
-    const app = $('#app');
-    if (app) app.classList.remove('scene-in');
-  }
+  const before = $('#app') ? $('#app').firstElementChild : null;
 
   if (Net.view) renderGame();
   else if (Net.room) renderLobby();
   else renderEntry();
+
+  /* 入场动画还没播完（720ms 内）又来一次状态推送，而这次把整块 DOM 重建了：
+     新画出来的 .hud/.board/.mybar 会把整屏入场从头再播一遍，
+     表现就是"刚进牌桌，牌桌又闪了一下"。所以摘掉 scene-in，让它们直接落到终态。
+    
+     反过来，**没重建**就别动：大厅现在是局部更新，菜单正展开到一半、
+     席位正在入场，这时候摘类会把动画生生打断，看起来也是"闪一下"。 */
+  const appNow = $('#app');
+  if (UI.sceneTimer && appNow && appNow.firstElementChild !== before) {
+    clearTimeout(UI.sceneTimer);
+    UI.sceneTimer = null;
+    appNow.classList.remove('scene-in');
+  }
 
   markScene(scene);
   syncLoopPhase();
@@ -2082,11 +2186,20 @@ function syncLoopPhase() {
 Net.on((type, payload) => {
   if (type === 'state') { render(); }
   else if (type === 'lobby') { render(); }
-  else if (type === 'joined') { if (!Net.view) render(); }
+  /* joined 只是"席位占好了"，此刻 Net.room 还是空的——画出来仍然是入口页。
+     紧跟着的 lobby / state 才是真正的第一帧。以前在这里 render 一次，
+     入口页被整块重建（入场动画从头再播），然后大厅再播一次，就成了"跳两次"。 */
+  else if (type === 'joined') { /* 等 lobby / state */ }
   else if (type === 'error') { toast(payload); }
+  /* 断线提示条：id 之前写成了 #connState（页面上叫 #conn），
+     而且只改了文字、没加 .show——真断线时它永远是透明的。 */
   else if (type === 'close') {
-    const c = $('#connState');
-    if (c) c.textContent = '重连中…';
+    const c = $('#conn');
+    if (c) { c.textContent = '连接已断开，正在重连…'; c.classList.add('show'); }
+  }
+  else if (type === 'open') {
+    const c = $('#conn');
+    if (c) c.classList.remove('show');
   }
 });
 

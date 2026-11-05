@@ -138,6 +138,12 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 3. **keystore 不能放 `build/`** —— `rm -rf build` 会把签名材料一起删掉，装过旧版就再也覆盖不上。
 4. **WebView 不实现 `confirm`** —— 不接管 `WebChromeClient` 的话，所有确认框点了都没反应。
 5. **测试别写死数字** —— 断言 `energy === 7` 会在每次调平衡时红一片，写 `before + 5`。
+6. **别拿 `innerHTML` 整块重绘有状态的界面** —— 大厅曾经每收到一次 `lobby` 就重建整块 DOM：
+   折叠菜单被打回初始态（加一个人机就自己收起）、席位列表滚动归零、面板重播入场，
+   观感就是"页面跳一下"。现在大厅是骨架只建一次 + 局部更新（`mountLobby` / `paintSeats`），
+   新增席位才播 `is-new`。改大厅请沿用这套，别退回整块重建。
+   同理，`joined` 事件不要立刻 `render()`：那一刻 `Net.room` 还是空的，画出来仍是入口页，
+   紧接着 `lobby` 再画一次大厅——就是"创建房间跳两次"。
 
 ---
 

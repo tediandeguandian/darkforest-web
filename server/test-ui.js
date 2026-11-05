@@ -139,7 +139,7 @@ w.Net.me = { playerId: 'p0' };
 w.__render();
 const lobbyHtml = w.document.querySelector('#app').innerHTML;
 ok(lobbyHtml.indexOf('id="settingsBtn"') >= 0, '房主应看到右上角的设置按钮');
-ok(lobbyHtml.indexOf('<details') >= 0, '添加对手应是折叠菜单');
+ok(lobbyHtml.indexOf('id="aiFold"') >= 0 && /aria-expanded=/.test(lobbyHtml), '添加对手应是可折叠菜单');
 ok(lobbyHtml.indexOf('rule-line') >= 0 && lobbyHtml.indexOf('目标隐藏') >= 0, '规则摘要应带上当前设置');
 ok(lobbyHtml.indexOf('data-strike=') < 0, '对局设置本体不该铺在大厅里');
 ok(lobbyHtml.indexOf('对手 · 智子') >= 0, '人机席位应显示为「对手」');
@@ -160,6 +160,41 @@ const onOpt = sm2 && sm2.querySelector('[data-strike].on');
 ok(!!onOpt && onOpt.getAttribute('data-strike') === 'hidden',
   '缺省时应高亮隐藏，实际 ' + (onOpt && onOpt.getAttribute('data-strike')));
 sm2 && sm2.remove();
+sm2 && sm2.remove();
+
+console.log('=== UI 6b. 大厅局部更新：加人机不重建、菜单不被收走 ===');
+{
+  w.Net.room.strikeTarget = 'hidden';
+  w.__render();
+  const root0 = w.document.querySelector('#app .lobby-room');
+  const fold0 = w.document.querySelector('#aiFold');
+  ok(!!root0 && !!fold0, '大厅应有骨架与折叠面板');
+  ok(fold0.getAttribute('data-open') === '0', '已有人机时首次默认收起，实际 ' + fold0.getAttribute('data-open'));
+
+  w.document.querySelector('#aiFoldBtn').click();
+  ok(fold0.getAttribute('data-open') === '1', '点标题应展开');
+  ok(fold0.querySelector('.fold-head').getAttribute('aria-expanded') === 'true', 'aria-expanded 应同步');
+
+  const seatP1 = w.document.querySelector('.seat[data-pid="p1"]');
+  w.Net.room = {
+    ...w.Net.room,
+    seats: [...w.Net.room.seats, { playerId: 'p2', name: 'C', connected: true, isAI: true, aiLevel: 'dehydrator' }],
+  };
+  w.__render();
+  ok(w.document.querySelector('#app .lobby-room') === root0, '重绘不该重建大厅骨架');
+  ok(w.document.querySelector('.seat[data-pid="p1"]') === seatP1, '已在场的席位不该被重建');
+  ok(w.document.querySelectorAll('.seat').length === 3,
+    '应多出一位，实际 ' + w.document.querySelectorAll('.seat').length);
+  ok(w.document.querySelector('#aiFold').getAttribute('data-open') === '1',
+    '加人机后菜单应保持展开（以前会被收走 → 页面跳一下）');
+  ok(w.document.querySelector('.seat[data-pid="p2"]').classList.contains('is-new'), '新席位应播入场');
+
+  // 移除一位：只删那个节点，其余照旧
+  w.Net.room = { ...w.Net.room, seats: w.Net.room.seats.slice(0, 2) };
+  w.__render();
+  ok(w.document.querySelectorAll('.seat').length === 2, '移除后应只剩 2 位');
+  ok(w.document.querySelector('.seat[data-pid="p1"]') === seatP1, '移除别人不该重建本席位');
+}
 
 /* ---------- 7. 入口页的「下载安卓版」 ----------
  * 只验证两种结局：后端给了 apk.json 就画出入口；没给就什么都不画（不留死链）。*/
