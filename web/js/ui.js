@@ -178,6 +178,22 @@ function openPrefModal() {
 }
 
 /* ---------- 入口 ---------- */
+/* 连上之前先给个回执。线上握手要 2–4 秒（DO 唤醒 + WS 往返 + hello），
+   这期间页面没有任何变化，用户会以为没点上，于是连点几次建出好几条连接。
+   换成"连接中…"并禁用，8 秒还没结果就自己恢复（真正的失败会有 toast + 重绘）。 */
+function pendingBtn(btn, text) {
+  if (!btn) return;
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = text;
+  clearTimeout(btn._pendingT);
+  btn._pendingT = setTimeout(() => {
+    if (!btn.isConnected) return;      // 已经换页了，节点没了就不用管
+    btn.disabled = false;
+    btn.textContent = old;
+  }, 8000);
+}
+
 function renderEntry() {
   clearOverlays();          // 从牌桌退回来时别把上一局的弹窗/换人提示留在屏上
   const saved = Net.name();
@@ -237,6 +253,7 @@ function renderEntry() {
   $('#createBtn').addEventListener('click', () => {
     const n = ($('#myname').value || '').trim() || '玩家';
     Net.setName(n);
+    pendingBtn($('#createBtn'), '创建中…');
     Net.createRoom(n);
   });
 
@@ -247,6 +264,7 @@ function renderEntry() {
       const r = ($('#roomcode').value || '').trim().toUpperCase();
       if (!r) return toast('请输入对局码');
       Net.setName(n);
+      pendingBtn(jb, '加入中…');
       Net.joinRoom(r, n);
     });
     $('#roomcode').addEventListener('keydown', e => { if (e.key === 'Enter') jb.click(); });
@@ -258,6 +276,7 @@ function renderEntry() {
       const r = ($('#roomcode').value || '').trim().toUpperCase();
       if (!r) return toast('请输入对局码');
       if (typeof Net.watch !== 'function') return toast('当前模式不支持观战');
+      pendingBtn(wb, '连接中…');
       Net.watch(r);
     });
   }

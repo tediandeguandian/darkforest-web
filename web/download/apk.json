@@ -2,7 +2,7 @@
   "version": "1.0.25",
   "file": "dark-forest.apk",
   "bytes": 788976,
-  "sha256": "f958b4839364b0b8499b88ee7b4b96917a8ba4feb1f8ba65f5f90beca3181f55",
+  "sha256": "f2805c62d371985e9dbcf94e1d211a26af4af56490df83f8076699e9cb41fd33",
   "notes": [
     "「不出」改为「结束回合」，说的就是它实际做的事",
     "新增观战：在入口页输入对局码，点「观战」就能旁观别人打",
