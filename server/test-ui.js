@@ -36,14 +36,16 @@ w.eval(fs.readFileSync(path.join(ROOT, 'shared/rules.js'), 'utf8'));
 w.eval(fs.readFileSync(path.join(ROOT, 'shared/view.js'), 'utf8'));
 // 用假的 Net 驱动渲染：ui.js 只依赖 Net.view / Net.room / Net.me
 w.eval(`var Net = {
-  view: null, room: null, me: { playerId: 'p0' }, local: true, canLan: false,
-  on(fn){}, act(){}, leave(){}, setMode(){}, setStrikeTarget(){}, addAI(){}, removeAI(){}, start(){},
+  view: null, room: null, me: { playerId: 'p0' }, roomId: null, local: true, canLan: false,
+  __h: [],
+  on(fn){ this.__h.push(fn); }, act(){}, leave(){}, setMode(){}, setStrikeTarget(){}, addAI(){}, removeAI(){}, start(){},
   name(){ return ''; }, setName(){}, autoResume(){ return false; }, hasSession(){ return false; }, lanUrl(){ return null; }
 };`);
 w.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
   // const 只活在这次 eval 的作用域里，必须显式挂到 window 才能被测试驱动
   window.__UI = UI;
   window.__render = render;
+  window.__setConnHint = setConnHint;
 `);
 
 function show(view, pid) {
@@ -922,6 +924,40 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     ok(viewFor(g22, 'p0').strikeTarget === 'hidden', '新局默认应是 hidden');
   }
 
-  console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);  console.log(`\\nUI 结果: ${pass} 通过, ${fail} 失败`);
+  console.log('=== UI 23. 断线提示条：真断线才亮，离开就收 ===');
+  {
+    const conn = w.document.getElementById('conn');
+    const fire = (t, p) => w.Net.__h.forEach(f => { try { f(t, p); } catch (e) { console.log(e); } });
+
+    // 在房间里被服务器断开
+    w.Net.roomId = 'ABCD';
+    w.Net.room = { roomId: 'ABCD', seats: [] };
+    fire('close');
+    ok(conn.classList.contains('show'), '真断线时提示条应亮起');
+
+    // 重连成功
+    fire('open');
+    ok(!conn.classList.contains('show'), '重连成功应收起提示条');
+
+    // 断线后点「返回」：Net.leave() 会把 roomId 置空，然后 render 回入口页
+    fire('close');
+    ok(conn.classList.contains('show'), '断线时提示条应是亮的');
+    w.Net.roomId = null;
+    w.Net.room = null;
+    show(null, null);
+    ok(!conn.classList.contains('show'), '从房间返回主页后不该留着「连接已断开，正在重连…」');
+
+    // 主动关连接时 close 回调晚到（浏览器里是异步的）：此时已经不在房间里
+    fire('close');
+    ok(!conn.classList.contains('show'), '已经离开房间时迟到的 close 不该点亮提示条');
+
+    // 直接调 setConnHint 也要能收（离开路径不依赖 render 也能收干净）
+    w.__setConnHint(true, '连接已断开，正在重连…');
+    ok(conn.classList.contains('show'), 'setConnHint(true) 应能点亮');
+    w.__setConnHint(false);
+    ok(!conn.classList.contains('show'), 'setConnHint(false) 应能收起');
+  }
+
+  console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();

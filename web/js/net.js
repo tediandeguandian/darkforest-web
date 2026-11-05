@@ -7,7 +7,6 @@
 const Net = (() => {
   let ws = null;
   let retry = 0;
-  let manualClose = false;
   let handlers = [];
   let pendingRoom = null;   // 本次要进入的房间
   let pendingName = null;
@@ -46,25 +45,41 @@ const Net = (() => {
     return `${proto}//${location.host}/ws?room=${encodeURIComponent(roomId)}`;
   }
 
+  /* 关闭旧连接 / 判断"这次 close 还算不算我们的"
+     以前用一个共享的 manualClose 布尔值：open() 一进来就把它重置成 false，
+     而旧 socket 的 onclose 是异步派发的——等它到的时候标志已经变回 false，
+     于是自己主动关掉的那次也会被当成"掉线"：弹断线提示、还触发一轮自动重连。
+     现在按 socket 实例打标记，旧连接的回调一律无视。 */
+  const retire = sock => {
+    if (!sock) return;
+    sock._dfRetired = true;
+    try { sock.close(); } catch {}
+  };
+
   function open(roomId, name = null, token = null) {
     pendingRoom = roomId;
     pendingName = name;
     state.roomId = roomId;
 
-    if (ws) { try { manualClose = true; ws.close(); } catch {} ws = null; }
-    manualClose = false;
+    const old = ws;
+    ws = null;
+    retire(old);
 
-    ws = new WebSocket(wsUrl(roomId));
+    const sock = new WebSocket(wsUrl(roomId));
+    ws = sock;
+    state.connected = false;
 
-    ws.onopen = () => {
+    sock.onopen = () => {
+      if (sock !== ws) return;
       retry = 0;
       state.connected = true;
       emit('open');
       const t = token || LS.get('df_token');
-      ws.send(JSON.stringify({ t: 'hello', name: pendingName || LS.get('df_name') || '玩家', token: t || undefined }));
+      sock.send(JSON.stringify({ t: 'hello', name: pendingName || LS.get('df_name') || '玩家', token: t || undefined }));
     };
 
-    ws.onmessage = ev => {
+    sock.onmessage = ev => {
+      if (sock !== ws) return;
       let m;
       try { m = JSON.parse(ev.data); } catch { return; }
       switch (m.t) {
@@ -90,10 +105,13 @@ const Net = (() => {
       }
     };
 
-    ws.onclose = () => {
+    sock.onclose = () => {
+      /* 主动关闭（离开房间、换房间）或被新连接取代：这不是断线。
+         以前这里先 emit('close') 再判断——用户点「返回」时提示条就亮起来，
+         而回到主页后不会再建立连接，也就永远等不到 open 去把它关掉。 */
+      if (sock._dfRetired || sock !== ws) return;
       state.connected = false;
       emit('close');
-      if (manualClose) return;
       retry++;
       emit('reconnecting', retry);
       // 只要还有房间就自动重连（指数退避）
@@ -101,11 +119,11 @@ const Net = (() => {
       if (!room) return;
       const delay = Math.min(8000, 500 * Math.pow(1.6, retry));
       setTimeout(() => {
-        if (!state.connected) open(room, pendingName, LS.get('df_token'));
+        if (!state.connected && ws === sock) open(room, pendingName, LS.get('df_token'));
       }, delay);
     };
 
-    ws.onerror = () => {};
+    sock.onerror = () => {};
   }
 
   return {
@@ -147,7 +165,11 @@ const Net = (() => {
     },
 
     send(obj) {
-      if (!ws || ws.readyState !== 1) { emit('error', '连接已断开，正在重连…'); return false; }
+      if (!ws || ws.readyState !== 1) {
+        // 只有"确实还在房间里"才提示掉线；已经离开/还没进房就不该冒这句话
+        if (pendingRoom) emit('error', '连接已断开，正在重连…');
+        return false;
+      }
       ws.send(JSON.stringify(obj));
       return true;
     },
@@ -158,12 +180,19 @@ const Net = (() => {
     removeAI(playerId) { this.send({ t: 'removeAI', playerId }); },
 
     leave() {
-      manualClose = true;
-      try { this.send({ t: 'leave' }); } catch {}
-      try { ws && ws.close(); } catch {}
-      LS.del('df_token'); LS.del('df_room');
+      const sock = ws;
+      ws = null;                       // 先摘引用：之后到达的 onclose 一定被忽略
+      if (sock && sock.readyState === 1) {
+        // 直接写 socket，不走 send()（否则连接已断时会弹一句"正在重连"）
+        try { sock.send(JSON.stringify({ t: 'leave' })); } catch {}
+      }
+      retire(sock);
+      state.connected = false;
       state.view = null; state.room = null; state.me = null; state.roomId = null;
       pendingRoom = null;
+      pendingName = null;
+      retry = 0;
+      LS.del('df_token'); LS.del('df_room');
     },
 
     on: fn => handlers.push(fn),

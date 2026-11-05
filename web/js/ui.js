@@ -2100,6 +2100,9 @@ function toast(msg) {
 
 /* ---------- 主循环 ---------- */
 function render() {
+  // 回到入口页（已经没有房间会话）就不该留着断线提示条
+  if (!Net.roomId) setConnHint(false);
+
   // 背景分两种：入口/大厅是"黑暗森林"（松林 + 月光），牌桌上抬头换成星空
   if (typeof document !== 'undefined' && document.body)
     document.body.classList.toggle('in-game', !!Net.view);
@@ -2194,14 +2197,23 @@ Net.on((type, payload) => {
   /* 断线提示条：id 之前写成了 #connState（页面上叫 #conn），
      而且只改了文字、没加 .show——真断线时它永远是透明的。 */
   else if (type === 'close') {
-    const c = $('#conn');
-    if (c) { c.textContent = '连接已断开，正在重连…'; c.classList.add('show'); }
+    // roomId 为空 = 已经主动离开：这不是断线，别亮提示条
+    if (Net.roomId) setConnHint(true, '连接已断开，正在重连…');
   }
   else if (type === 'open') {
-    const c = $('#conn');
-    if (c) c.classList.remove('show');
+    setConnHint(false);
   }
 });
+
+/* 断线提示条是 index.html 里的常驻节点（不在 #app 内，render 不会重建它），
+   所以只能显式开/关。离开房间时也必须关——以前那里不关，
+   提示条就一直挂在主页顶上，等一个永远不会来的 open。 */
+function setConnHint(on, text) {
+  const c = $('#conn');
+  if (!c) return;
+  if (text) c.textContent = text;
+  c.classList.toggle('show', !!on);
+}
 
 setInterval(() => {
   const v = Net.view;
