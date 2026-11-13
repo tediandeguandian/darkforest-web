@@ -170,6 +170,20 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
     满幅母版留给 Android 自适应图标和 Windows ico（它们各有各的规范），
     macOS 那份由 `tools/mac-icon.py` 生成（`apk/icon/macos-1024.png`），CI 打 icns 时优先用它。
 
+11. **桌面版的更新提示是"三件套"，缺一件就静默失效** —— 1.0.26 的 macOS 版就是三样都缺：
+    - `window.DF_VERSION`：本机版本。由 `tools/prep-frontend.sh` / `desktop/build-win.sh`
+      从 `desktop/package.json` 读出来注入。**不注入就等于不知道自己几版，检查直接 return。**
+    - 清单：桌面版读 `web/download/desktop.json`（`checkAppUpdate` 里按 `DF_APP` / `DF_DESKTOP`
+      分叉）。它和 `apk.json` 是两份，别只更新其中一份；`desktop.json` 由
+      `node tools/make-desktop-manifest.js` 生成，版本/体积/改动清单都是现算的。
+    - 打开浏览器：Tauri 的 webview 里 `window.open` 会被直接拦掉（返回 null），
+      `location.href` 会把正在玩的页面导航走。所以加了 `tauri-plugin-opener`，
+      前端走 `window.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', {url})`，
+      权限在 `capabilities/default.json` 的 `opener:default`（只放行 https/http）。
+
+    还有一层自举问题：**旧版本里没有检查代码，就没法提示自己去更新。**
+    每次改这块，都要接受"这一版必须手动装，下一版起才会自动提示"。
+
 ---
 
 ## 7. 已知问题 / 风险
