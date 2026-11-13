@@ -679,9 +679,13 @@ function openUpdateDialog(info, kind) {
 
   // 最多列 4 个版本、每个版本 4 条：再老的版本折叠成一句，别把弹窗撑成说明书
   const shown = groups.slice(0, 4);
-  const notes = shown.map(g => `
+  let clipped = 0;                              // 被截掉的条目数（每版最多 4 条）
+  const notes = shown.map(g => {
+    clipped += Math.max(0, g.items.length - 4);
+    return `
     ${multi ? `<div class="dlg-verline">v${esc(g.ver)}</div>` : ''}
-    <ul class="dlg-list">${g.items.slice(0, 4).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`).join('');
+    <ul class="dlg-list">${g.items.slice(0, 4).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`;
+  }).join('');
   const rest = groups.length - shown.length;
 
   /* 桌面版的「立即更新」只能把人带到下载页（没有原生安装桥），
@@ -705,6 +709,7 @@ function openUpdateDialog(info, kind) {
       ${multi ? `<p class="dlg-note">落后 ${groups.length} 个版本，直接更新到最新版，无需逐版本安装。</p>` : ''}
       ${groups.length ? `<div class="dlg-sub">本次更新${multi ? ` · ${groups.length} 个版本` : ''}</div>${notes}` : ''}
       ${rest > 0 ? `<p class="dlg-note">另有 ${rest} 个较早版本的改动未列出。</p>` : ''}
+      ${clipped > 0 ? `<p class="dlg-note">另有 ${clipped} 条改动未列出。</p>` : ''}
       <p class="dlg-note">${tail}</p>`,
     okText: desktop ? '前往下载' : '立即更新',
     cancelText: '稍后再说',
