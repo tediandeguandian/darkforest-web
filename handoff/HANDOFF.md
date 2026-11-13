@@ -157,6 +157,19 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
    所有 `find(p => p.id === v.me.id)` 自然落到兜底分支，再单独隐藏手牌区与操作栏。
    **不要为了"看得爽"给观战者开上帝视角**：那等于把隐藏信息交给一个可以开麦的人。
 
+9. **壳里有几个页面，取决于注入的标记，不靠猜** —— 单机（`index.html`）与联机（`online.html`）
+   是两个页面互相跳。入口页原来只在 `window.DF_APP`（安卓壳）时画「返回单人模式」，
+   而 `prep-frontend.sh` 明确不给桌面版注入 `DF_APP`，于是 macOS / Windows 桌面壳里
+   点完「联机对局」就再也回不去——页面上根本没有那个按钮。
+   现在统一走 `inShell()`：`DF_APP` / `DF_DESKTOP`（prep 注入）/ `file:` / `tauri:` 任一成立即可。
+   判断"是不是在壳里"别只看一个标记，也别只看协议：Tauri 在 macOS 是 `tauri://`，
+   Windows 是 `http://tauri.localhost`，Electron 是 `file://`，安卓是 `file://` + `DF_APP`。
+
+10. **macOS 图标是 1024 画布里的 824 圆角方块**，不是"整张画布"。
+    直接拿铺满画布的母版做 icns，Dock 里会比「系统设置」之类的系统图标整整大一圈。
+    满幅母版留给 Android 自适应图标和 Windows ico（它们各有各的规范），
+    macOS 那份由 `tools/mac-icon.py` 生成（`apk/icon/macos-1024.png`），CI 打 icns 时优先用它。
+
 ---
 
 ## 7. 已知问题 / 风险
