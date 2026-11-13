@@ -135,8 +135,10 @@
     {
       "os": "win",
       "label": "下载 Windows 版（轻量）",
-      "sub": "v1.0.27 · 需 WebView2（缺失时自动装）",
-      "url": "https://github.com/tediandeguandian/darkforest-web/releases/download/v1.0.27/dark-forest-1.0.27-tauri-setup.exe"
+      "sub": "v1.0.27 · 1.7 MB · 需 WebView2（缺失时自动装）",
+      "url": "/download/dark-forest-1.0.27-tauri-setup.exe",
+      "file": "黑暗森林-v1.0.27-win64-setup.exe",
+      "bytes": 1769062
     },
     {
       "os": "win",
@@ -157,8 +159,10 @@
     "win": {
       "os": "win",
       "label": "下载 Windows 版（轻量）",
-      "sub": "v1.0.27 · 需 WebView2（缺失时自动装）",
-      "url": "https://github.com/tediandeguandian/darkforest-web/releases/download/v1.0.27/dark-forest-1.0.27-tauri-setup.exe"
+      "sub": "v1.0.27 · 1.7 MB · 需 WebView2（缺失时自动装）",
+      "url": "/download/dark-forest-1.0.27-tauri-setup.exe",
+      "file": "黑暗森林-v1.0.27-win64-setup.exe",
+      "bytes": 1769062
     }
   }
 }
