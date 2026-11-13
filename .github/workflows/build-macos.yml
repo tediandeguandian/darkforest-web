@@ -13,7 +13,10 @@ jobs:
   dmg:
     name: macOS DMG（universal，10.15+）
     # 必须是 macOS runner：dmg 依赖 hdiutil / codesign，Linux 上做不出来
-    runs-on: macos-14
+    # macos-14 已被 GitHub 退役：job 会在 1 秒内被取消，
+    # 注解写 "The configuration 'macos-14-arm64-us-default' is not supported"。
+    # 用 macos-15 显式指定，别用 macos-latest（升级到 macOS 26 时 SDK 又会跳一版）。
+    runs-on: macos-15
     permissions:
       contents: write
     steps:
