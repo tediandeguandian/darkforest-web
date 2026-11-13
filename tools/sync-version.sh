@@ -4,6 +4,8 @@
 #
 #   版本号只写在 desktop/package.json 一个地方，这个脚本把它同步到：
 #     · desktop-tauri/src-tauri/tauri.conf.json（Tauri 安装包的版本，此前漏了）
+#     · desktop-tauri/src-tauri/Cargo.toml（[package] version，一直停在 1.0.13，
+#       和安装包版本对不上，排查问题时很容易被它误导）
 #
 # AndroidManifest 的 versionName 由 apk/build.sh 从 manifest 自己读，versionCode 手工递增，
 # 所以不在这里动——但每次发版记得把它一起改（README 的发版清单里有写）。
@@ -20,6 +22,8 @@ node - "$HERE" <<'EOF'
 const fs = require('fs');
 const [here] = process.argv.slice(2);
 const ver = JSON.parse(fs.readFileSync(here + '/desktop/package.json', 'utf8')).version;
+
+// 1) Tauri 打包版本（tauri.conf.json 优先于 Cargo.toml，改它安装包才会变）
 const file = here + '/desktop-tauri/src-tauri/tauri.conf.json';
 const j = JSON.parse(fs.readFileSync(file, 'utf8'));
 if (j.version !== ver) {
@@ -28,5 +32,16 @@ if (j.version !== ver) {
   console.log('· tauri.conf.json 版本 →', ver);
 } else {
   console.log('· tauri.conf.json 版本已是', ver);
+}
+
+// 2) Cargo.toml 的 [package] version：只替换第一处 version（就是 [package] 那段）
+const cargo = here + '/desktop-tauri/src-tauri/Cargo.toml';
+const src = fs.readFileSync(cargo, 'utf8');
+const out = src.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+if (out !== src) {
+  fs.writeFileSync(cargo, out);
+  console.log('· Cargo.toml 版本 →', ver);
+} else {
+  console.log('· Cargo.toml 版本已是', ver);
 }
 EOF

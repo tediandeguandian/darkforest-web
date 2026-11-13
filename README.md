@@ -46,6 +46,7 @@
 | 文件 | 适用 |
 |---|---|
 | `dark-forest-<版本>.apk` | 安卓。离线单机 / 同一 Wi-Fi 局域网 / 在线联机三合一 |
+| `dark-forest-<版本>-macos-universal.dmg` | macOS 10.15+（Intel / Apple 芯片通用）。装好后会在有新版本时自己提示 |
 | `dark-forest-<版本>-tauri-setup.exe` | Windows 轻量版（约 1.5 MB）。使用系统 WebView2，缺失时安装程序会自动下载 |
 | `dark-forest-<版本>-win64-setup.exe` | Windows 完整版（约 105 MB）。自带浏览器内核，零依赖 |
 | `dark-forest-win64-<版本>.zip` | Windows 免安装版。解压双击 `dark-forest.exe` |
@@ -88,7 +89,7 @@ npm start          # 默认 8080 端口
 |---|---|
 | 服务器地址 | 同源部署（前端由 server/ 或 worker/ 托管）**无需配置**；前后端分离时在 `web/index.html` 的 `</head>` 前加 `<script>window.DF_SERVER="https://你的服务端";</script>` |
 | `web/download/apk.json` | 想提供安卓下载入口时：写入你的 APK 版本号与地址；删掉此文件则入口自动隐藏 |
-| `web/download/desktop.json` | 想提供 Windows 下载入口时：写入 exe 的直链或外链；删掉则隐藏 |
+| `web/download/desktop.json` | 桌面版（macOS / Windows）的下载清单，**同时供桌面版自身检查更新**。别手写：跑 `node tools/make-desktop-manifest.js`，版本、体积、更新说明都从 `desktop/package.json` / `apk/release-notes.json` / 实际安装包现算 |
 | `server/server.js` 顶部 `AI_THINK_MIN / AI_THINK_MAX` | 人机"思考"时长（毫秒，默认 3–10 秒） |
 
 ### Cloudflare Workers 版
@@ -99,6 +100,7 @@ npm start          # 默认 8080 端口
 
 ```bash
 node server/test-server.js                        # 规则引擎 / 视图裁剪 / AI / 边界兜底
+node server/test-net.js                           # 断线语义 / 主动离开 / 观战握手
 node server/test-ui.js                            # 前端渲染冒烟（需要 jsdom）
 cd worker && npm test                             # Durable Object 逻辑
 ```

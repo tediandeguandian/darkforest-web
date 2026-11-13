@@ -1,6 +1,6 @@
 [package]
 name = "dark-forest"
-version = "1.0.13"
+version = "1.0.27"
 description = "三体 · 黑暗森林 桌面版"
 authors = ["shuwang"]
 edition = "2021"
@@ -11,6 +11,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
+# 更新提示要能把用户带到浏览器下载 dmg / exe：webview 里 window.open 会被拦
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

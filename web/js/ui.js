@@ -331,6 +331,12 @@ const WIN_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" st
     <path d="M3.5 9h17"/><path d="M8 9v5"/><path d="M8 14h4v-5"/>
     <path d="M14 14h3v-2"/><path d="M14 12h2.5"/>
   </svg>`;
+/* macOS 版的小图标：一台笔记本 */
+const MAC_ICON = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+    stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="4.2" y="4.5" width="15.6" height="11" rx="1.8"/>
+    <path d="M2.4 18.6h19.2"/><path d="M9.8 15.5h4.4"/>
+  </svg>`;
 
 /* 下载入口：所有安装包聚合成**一个**「下载客户端」按钮，
    点开在应用内弹层里挑平台。
@@ -347,6 +353,7 @@ function mountDownloadEntry() {
     if (apk && apk.file) {
       const kb = apk.bytes ? Math.round(apk.bytes / 1024) : 0;
       out.push({
+        os: 'android',
         icon: APK_ICON,
         label: '下载安卓版',
         sub: [apk.version ? 'v' + apk.version : '', kb ? kb + ' KB' : '', '离线 · 同 Wi-Fi · 联机']
@@ -358,7 +365,8 @@ function mountDownloadEntry() {
     const desk = UI.desktop;
     if (desk && Array.isArray(desk.items)) {
       desk.items.forEach(it => out.push({
-        icon: WIN_ICON,
+        os: it.os || 'win',                 // 老清单没有 os 字段，默认按 Windows 处理
+        icon: it.os === 'mac' ? MAC_ICON : WIN_ICON,
         label: it.label || '下载 Windows 版',
         sub: it.sub || '',
         url: it.url || '#',
@@ -368,12 +376,16 @@ function mountDownloadEntry() {
     return out;
   };
 
+  const OS_NAME = { android: '安卓', mac: 'macOS', win: 'Windows' };
+
   const paint = () => {
     const list = collect();
     if (!list.length) return;
+    // 副标题按实际平台拼，别写死「安卓 / Windows」——加了 mac 版就露馅了
+    const kinds = [...new Set(list.map(it => it.os))].map(k => OS_NAME[k]).filter(Boolean);
     slot.innerHTML = `<button class="apk-get" id="dlBtn" type="button">
       <span class="apk-ico">${APK_ICON}</span>
-      <span class="apk-txt"><b>下载客户端</b><span>${list.length} 个版本 · 安卓 / Windows</span></span>
+      <span class="apk-txt"><b>下载客户端</b><span>${list.length} 个版本${kinds.length ? ' · ' + kinds.join(' / ') : ''}</span></span>
       <span class="apk-arrow">↓</span>
     </button>`;
     const btn = $('#dlBtn');
@@ -602,12 +614,27 @@ function openDialog(opts) {
   return { close };
 }
 
-/* 安卓包里检查更新：和线上的版本号比，有新版本才在右上角点一个小圆点 */
+/* 谁需要检查更新、去问哪份清单。
+   安卓壳看 apk.json，桌面壳（Tauri / Electron）看 desktop.json。
+   共同前提是 window.DF_VERSION——构建时注入的本机版本；网页版没有，直接跳过。
+   之前这里只认 DF_APP，于是 mac / Windows 桌面版装了 1.0.26 也从来没有更新提示。 */
+function updateTarget() {
+  if (typeof window === 'undefined') return null;
+  if (!window.DF_VERSION) return null;
+  if (window.DF_APP) return { manifest: '/download/apk.json', kind: 'apk' };
+  const p = (typeof location !== 'undefined' && location.protocol) || '';
+  if (window.DF_DESKTOP || p === 'file:' || p === 'tauri:') {
+    return { manifest: '/download/desktop.json', kind: 'desktop' };
+  }
+  return null;
+}
+
+/* 壳里检查更新：和线上的版本号比，有新版本才在右上角点一个小圆点 */
 function checkAppUpdate() {
-  if (typeof window === 'undefined') return;
-  if (!window.DF_APP || !window.DF_VERSION) return;     // 网页版不需要
+  const target = updateTarget();
+  if (!target) return;                                  // 网页版不需要
   if (document.getElementById('updateBadge')) return;
-  fetch(serverBase() + '/download/apk.json', { cache: 'no-store' })
+  fetch(serverBase() + target.manifest, { cache: 'no-store' })
     .then(r => (r.ok ? r.json() : null))
     .catch(() => null)
     .then(info => {
@@ -618,17 +645,37 @@ function checkAppUpdate() {
       b.id = 'updateBadge';
       b.title = `有新版本 v${info.version}（当前 v${window.DF_VERSION}）`;
       b.innerHTML = '<span class="ub-dot"></span>新版本';
-      b.addEventListener('click', () => openUpdateDialog(info));
+      b.addEventListener('click', () => openUpdateDialog(info, target.kind));
       document.body.appendChild(b);
     });
 }
 
+/* 桌面端该拿哪个包：清单里按系统分平台，没有就退回 items 第一条 */
+function desktopPkg(info) {
+  const os = deskOS();
+  const p = info && info.platforms && info.platforms[os];
+  if (p && p.url) return p;
+  const items = info && Array.isArray(info.items) ? info.items : [];
+  return items[0] || null;
+}
+
+/* 当前桌面系统：mac 的包是 dmg，其余按 Windows exe 处理 */
+function deskOS() {
+  const nav = typeof navigator !== 'undefined' ? navigator : {};
+  const ua = String(nav.userAgent || nav.platform || '');
+  return /Mac|iPhone|iPad/i.test(ua) ? 'mac' : 'win';
+}
+
 /* 点「新版本」先问一句：版本号、体积、这一跳跨过了哪些改动、要下不下 */
-function openUpdateDialog(info) {
+function openUpdateDialog(info, kind) {
+  const desktop = kind === 'desktop';
   const cur = window.DF_VERSION || '';
-  const kb = info.bytes ? Math.round(info.bytes / 1024) : 0;
+  const pkg = desktop ? desktopPkg(info) : null;
+  const bytes = pkg && pkg.bytes ? pkg.bytes : info.bytes;
+  const kb = bytes ? Math.round(bytes / 1024) : 0;
   const groups = updateGroups(info, cur, info.version);
   const multi = groups.length > 1;
+  const mb = kb >= 1024 ? (kb / 1024).toFixed(1) + ' MB' : (kb ? kb + ' KB' : '');
 
   // 最多列 4 个版本、每个版本 4 条：再老的版本折叠成一句，别把弹窗撑成说明书
   const shown = groups.slice(0, 4);
@@ -637,19 +684,31 @@ function openUpdateDialog(info) {
     <ul class="dlg-list">${g.items.slice(0, 4).map(n => `<li>${esc(n)}</li>`).join('')}</ul>`).join('');
   const rest = groups.length - shown.length;
 
+  /* 桌面版的「立即更新」只能把人带到下载页（没有原生安装桥），
+     所以文案要把下一步说清楚，别让人以为点完就自动装好了。
+     体积那句优先用清单里的 sub（带 WebView2 / 芯片说明），没有就自己拼。 */
+  const sizeLine = desktop
+    ? (pkg && pkg.sub ? pkg.sub : ['v' + info.version, mb, '完整安装包'].filter(Boolean).join(' · '))
+    : [mb, '完整安装包', '离线 · 同 Wi-Fi · 联机'].filter(Boolean).join(' · ');
+  const tail = desktop
+    ? (deskOS() === 'mac'
+      ? '下载后把「黑暗森林」拖进「应用程序」替换旧版即可，存档与设置不会丢。'
+      : '下载后运行安装程序覆盖安装即可，存档与设置不会丢。')
+    : '更新不会影响本机设置。';
+
   openDialog({
     id: 'updateDialog',
     title: '发现新版本',
     body: `
       <div class="dlg-ver"><span>v${esc(info.version)}</span><i>当前 v${esc(cur)}</i></div>
-      <p class="dlg-note">${[kb ? kb + ' KB' : '', '完整安装包', '离线 · 同 Wi-Fi · 联机'].filter(Boolean).join(' · ')}</p>
+      <p class="dlg-note">${sizeLine}</p>
       ${multi ? `<p class="dlg-note">落后 ${groups.length} 个版本，直接更新到最新版，无需逐版本安装。</p>` : ''}
       ${groups.length ? `<div class="dlg-sub">本次更新${multi ? ` · ${groups.length} 个版本` : ''}</div>${notes}` : ''}
       ${rest > 0 ? `<p class="dlg-note">另有 ${rest} 个较早版本的改动未列出。</p>` : ''}
-      <p class="dlg-note">更新不会影响本机设置。</p>`,
-    okText: '立即更新',
+      <p class="dlg-note">${tail}</p>`,
+    okText: desktop ? '前往下载' : '立即更新',
     cancelText: '稍后再说',
-    onOk: () => downloadUpdate(info),
+    onOk: () => downloadUpdate(info, kind),
   });
 }
 
@@ -674,12 +733,32 @@ function updateGroups(info, cur, target) {
   return out.sort((a, b) => compareVer(b.ver, a.ver));
 }
 
-/* 真正的下载：安卓壳走原生（下完直接唤起安装器），网页版退回浏览器 */
-function downloadUpdate(info) {
+/* 真正的下载：
+   · 安卓壳走原生（下完直接唤起安装器）
+   · 桌面壳没有原生安装桥 → 打开系统浏览器去下 dmg / exe
+   · 网页版退回浏览器 */
+function downloadUpdate(info, kind) {
+  const b = document.getElementById('updateBadge');
+
+  if (kind === 'desktop') {
+    const pkg = desktopPkg(info);
+    if (!pkg || !pkg.url) return toast('暂时没有可用的安装包');
+    // 清单里可以写同源短链（/download/…）或 GitHub Release 外链
+    const url = /^https?:\/\//i.test(pkg.url) ? pkg.url : serverBase() + pkg.url;
+    if (!openExternal(url)) return toast('没能打开浏览器，请手动打开官网下载');
+    toast('已在浏览器中打开下载');
+    if (b) {
+      b.disabled = true;
+      b.innerHTML = '<span class="ub-dot"></span>下载中';
+      // 浏览器接管了下载，这里只是把按钮从「新版本」挪开，不假装知道进度
+      setTimeout(() => { if (b.isConnected) { b.disabled = false; b.innerHTML = '<span class="ub-dot"></span>新版本'; } }, 12000);
+    }
+    return;
+  }
+
   const file = info.file || 'dark-forest.apk';
   const url = serverBase() + '/download/' + file;   // APK 里必须绝对地址（file:// 下没有同源）
   const A = window.Android;
-  const b = document.getElementById('updateBadge');
 
   if (A && A.downloadApk) {
     // 已经下过（比如刚被系统要求去开「安装未知应用」权限）就直接装，别重复下几百 KB
@@ -703,6 +782,39 @@ function downloadUpdate(info) {
   }
   if (A && A.openUrl) A.openUrl(url);
   else location.href = url;
+}
+
+/* 把外链交给系统浏览器。
+   Tauri 的 webview 对 window.open / location.href 都不一定放行：
+   window.open 会被直接拦掉（返回 null），location.href 则可能把游戏页面导航走。
+   所以优先走 opener 插件（Rust 侧调 open / start / xdg-open），逐级降级。
+   返回 false 表示确实没打开，调用方要给出提示，别让用户以为点了没反应。 */
+function openExternal(url) {
+  const w = typeof window !== 'undefined' ? window : {};
+
+  // 1) Tauri 2 的 opener 插件（命令名固定为 plugin:opener|open_url）
+  try {
+    const T = w.__TAURI_INTERNALS__;
+    if (T && typeof T.invoke === 'function') {
+      const r = T.invoke('plugin:opener|open_url', { url });
+      if (r && typeof r.catch === 'function') r.catch(() => { try { w.location.href = url; } catch (e) {} });
+      return true;
+    }
+  } catch (e) { /* 没有原生桥就走下面 */ }
+
+  // 2) 安卓壳 / 旧 Electron 注入的桥
+  const A = w.Android;
+  if (A && typeof A.openUrl === 'function') {
+    try { A.openUrl(url); return true; } catch (e) {}
+  }
+
+  // 3) 普通浏览器
+  try {
+    if (typeof w.open === 'function' && w.open(url, '_blank', 'noopener')) return true;
+  } catch (e) {}
+
+  // 4) 最后兜底：整页跳转（网页版就是下载，壳里至少也能触发一次）
+  try { w.location.href = url; return true; } catch (e) { return false; }
 }
 
 /* ---------- 大厅 ---------- */

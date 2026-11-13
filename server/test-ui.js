@@ -374,6 +374,103 @@ console.log('=== UI 6b. 大厅局部更新：加人机不重建、菜单不被�
   ok(!!ud5 && ud5.innerHTML.indexOf('本次更新') < 0, '没有清单时不该留空标题');
   ud5 && ud5.querySelector('[data-close]').click();
 
+  /* ---------- 9b. 桌面壳（macOS / Windows）：同一套提示，清单换成 desktop.json ----------
+   * 之前 checkAppUpdate 只认 DF_APP，桌面版装了 1.0.26 也从来没有更新提示。
+   * 桌面壳没有原生安装桥，所以「立即更新」改成「前往下载」——必须开系统浏览器。 */
+  console.log('=== UI 9b. 桌面版更新提示（macOS / Windows）===');
+  w.document.getElementById('updateBadge')?.remove();
+  w.document.getElementById('updateDialog')?.remove();
+  // 真机上安卓桥与桌面壳不会共存；这里也删掉，免得 openExternal 走错分支
+  w.eval(`delete window.DF_APP; delete window.Android;
+    window.DF_DESKTOP = 1; window.DF_VERSION = '1.0.26';
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', configurable: true });
+    window.__opened = [];
+    window.open = u => { window.__opened.push(u); return {}; };
+    window.__lastFetch = null;
+    window.fetch = u => { window.__lastFetch = u; return Promise.resolve({ ok: true, json: () => Promise.resolve({
+      version: '1.0.27',
+      platforms: {
+        mac: { url: '/download/dark-forest-1.0.27-macos-universal.dmg', bytes: 5870000,
+               sub: 'v1.0.27 · 5.6 MB · 通用二进制（Intel / Apple 芯片）' },
+        win: { url: '/download/dark-forest-1.0.27-tauri-setup.exe', bytes: 1732527,
+               sub: 'v1.0.27 · 1.7 MB · 需 WebView2（缺失时自动装）' }
+      },
+      history: { '1.0.26': ['这条不该出现（本机就是 1.0.26）'], '1.0.27': ['macOS 版新增更新提示'] }
+    }) }); };`);
+  w.__render();
+  await new Promise(r => setTimeout(r, 0));
+  ok(w.__lastFetch === 'https://darkforest.dpdns.org/download/desktop.json',
+    '桌面版应请求 desktop.json，实际 ' + w.__lastFetch);
+  const dbadge = w.document.querySelector('#updateBadge');
+  ok(!!dbadge, '桌面版有新版本时也应出现提示（以前这里只认 DF_APP）');
+
+  dbadge && dbadge.click();
+  const dud = w.document.querySelector('#updateDialog');
+  const dhtml = dud ? dud.innerHTML : '';
+  ok(!!dud, '桌面版点「新版本」也要有应用内弹窗');
+  ok(dhtml.indexOf('前往下载') >= 0, '桌面版按钮应说「前往下载」（没有原生安装器，不能假装一键装好）');
+  ok(dhtml.indexOf('通用二进制') >= 0, 'macOS 弹窗应写清是通用二进制');
+  ok(dhtml.indexOf('拖进「应用程序」') >= 0, 'macOS 要说明装法：拖进应用程序替换');
+  ok(dhtml.indexOf('这条不该出现') < 0, '本机已装版本的改动不该列');
+  ok(dhtml.indexOf('macOS 版新增更新提示') >= 0, '应列出新版本的改动');
+  ok((w.__opened || []).length === 0, '还没确认，不该打开浏览器');
+
+  dud && dud.querySelector('[data-ok]').click();
+  const opened = w.__opened || [];
+  ok(opened.length === 1, '确认后应打开一次下载页，实际 ' + opened.length);
+  ok(/^https:\/\/darkforest\.dpdns\.org\/download\/dark-forest-1\.0\.27-macos-universal\.dmg$/.test(opened[0] || ''),
+    'macOS 应打开 dmg 的绝对地址，实际 ' + opened[0]);
+
+  // Windows：同一个清单，按 UA 换到 exe
+  w.document.getElementById('updateBadge')?.remove();
+  w.eval(`Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', configurable: true });
+    window.__opened = [];`);
+  w.__render();
+  await new Promise(r => setTimeout(r, 0));
+  const wbadge = w.document.querySelector('#updateBadge');
+  ok(!!wbadge, 'Windows 版同样应有提示');
+  wbadge && wbadge.click();
+  const wud = w.document.querySelector('#updateDialog');
+  ok(!!wud && wud.innerHTML.indexOf('需 WebView2') >= 0, 'Windows 弹窗应带 WebView2 说明');
+  ok(!!wud && wud.innerHTML.indexOf('覆盖安装') >= 0, 'Windows 要说明覆盖安装即可');
+  wud && wud.querySelector('[data-ok]').click();
+  ok(/tauri-setup\.exe$/.test((w.__opened || [])[0] || ''),
+    'Windows 应打开 exe，实际 ' + (w.__opened || [])[0]);
+
+  // 网页版：既没有壳标记也没有版本号，一次请求都不该发
+  w.document.getElementById('updateBadge')?.remove();
+  w.eval(`delete window.DF_DESKTOP; delete window.DF_VERSION; window.__lastFetch = null;`);
+  w.__render();
+  await new Promise(r => setTimeout(r, 0));
+  ok(!w.__lastFetch, '网页版不该请求任何更新清单');
+  ok(!w.document.querySelector('#updateBadge'), '网页版不该出现更新提示');
+
+  // 恢复成第 9 节的安卓壳状态，后面的用例还要用
+  w.eval(`window.DF_APP = 1; window.DF_VERSION = '1.0.0'; delete window.DF_DESKTOP;
+    window.Android = { downloadApk: () => '{"ok":true}', installDownloaded: () => '{"ok":false}',
+      openUrl: () => {} };
+    window.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({
+      version: '1.0.3', file: 'dark-forest.apk', bytes: 338130 }) });`);
+
+/* ---------- 9c. 构建脚本：桌面壳必须带上「我是桌面版」和本机版本 ----------
+ * 没有这两个变量，ui.js 就把桌面版当成普通网页：既不提示更新，也回不到单人模式。 */
+console.log('=== UI 9c. prep-frontend 注入桌面标记与版本 ===');
+try {
+  const { execFileSync } = require('child_process');
+  const outDir = path.join(require('os').tmpdir(), 'df-prep-test');
+  execFileSync('sh', [path.join(ROOT, 'tools/prep-frontend.sh'), outDir], { stdio: 'pipe' });
+  const ver = JSON.parse(fs.readFileSync(path.join(ROOT, 'desktop/package.json'), 'utf8')).version;
+  [['index.html', 'index.html'], ['online.html', 'online.html']].forEach(([label, f]) => {
+    const html = fs.readFileSync(path.join(outDir, f), 'utf8');
+    ok(html.indexOf('window.DF_DESKTOP=1') >= 0, label + ' 应注入 DF_DESKTOP（否则桌面版当成网页）');
+    ok(html.indexOf('window.DF_VERSION="' + ver + '"') >= 0, label + ' 应注入本机版本 ' + ver);
+  });
+} catch (e) {
+  console.log('  （跳过：这台机器跑不了 sh）' + (e && e.message ? ' ' + e.message : ''));
+}
+
 console.log('=== UI 10. 对局中换星空背景 ===');
   // 牌桌上 body 应带 in-game（CSS 据此把背景换成星空），入口/大厅不带
   show(viewFor(g, 'p1'), 'p1');

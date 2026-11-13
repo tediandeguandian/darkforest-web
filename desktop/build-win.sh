@@ -27,18 +27,20 @@ cp "$ROOT/web/favicon.ico" "$ROOT/web/favicon.png" "$ROOT/web/apple-touch-icon.p
 
 # 离线页：file:// 下 ../shared 解析不到，改成本目录里的相对路径
 # （不注入 DF_APP：那是安卓壳的标记，桌面版没有原生桥）
+# DF_DESKTOP / DF_VERSION：入口页据此检查更新（Electron 版也不该比 Tauri 版少这个）
 sed 's|\.\./shared/|shared/|g' "$ROOT/web/local.html" \
-  | sed 's|</head>|<script>window.DF_SERVER="https://darkforest.dpdns.org";</script></head>|' \
+  | sed "s|</head>|<script>window.DF_SERVER=\"https://darkforest.dpdns.org\";window.DF_DESKTOP=1;window.DF_VERSION=\"$VER\";</script></head>|" \
   > www/index.html
 
-# 联机页：把服务器绝对路径改成相对路径，并注入服务器地址
-ROOT="$ROOT" node -e '
+# 联机页：把服务器绝对路径改成相对路径，并注入服务器地址与本机版本
+ROOT="$ROOT" VER="$VER" node -e '
 const fs = require("fs");
 let s = fs.readFileSync(process.env.ROOT + "/web/index.html", "utf8");
 s = s.replace(/"\/shared\//g, "\"shared/")
      .replace(/"\/web\/js\//g, "\"js/")
      .replace(/"\/web\/style\.css"/g, "\"style.css\"")
-     .replace("</head>", "<script>window.DF_SERVER=\"https://darkforest.dpdns.org\";window.DF_DESKTOP=1;</script></head>");
+     .replace("</head>", "<script>window.DF_SERVER=\"https://darkforest.dpdns.org\";window.DF_DESKTOP=1;window.DF_VERSION=\""
+       + process.env.VER + "\";</script></head>");
 fs.writeFileSync("www/online.html", s);
 '
 
