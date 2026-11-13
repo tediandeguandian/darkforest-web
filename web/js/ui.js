@@ -194,6 +194,19 @@ function pendingBtn(btn, text) {
   }, 8000);
 }
 
+/* 是不是装在壳里（APK / Tauri / Electron）。
+   只有壳里才有"单机页"这一说——网页版压根没有 index.html 这个单机入口。
+   DF_APP：安卓壳注入；DF_DESKTOP：desktop / desktop-tauri 的 prep 脚本注入；
+   file:// 兜底旧 Electron 包（那时还没注入 DF_DESKTOP）。
+   之前这里只认 DF_APP，于是桌面版点完「联机对局」跳到 online.html 以后，
+   返回按钮根本不渲染——人就卡在联机入口里出不来了。 */
+function inShell() {
+  if (typeof window === 'undefined') return false;
+  if (window.DF_APP || window.DF_DESKTOP) return true;
+  const p = (typeof location !== 'undefined' && location.protocol) || '';
+  return p === 'file:' || p === 'tauri:';
+}
+
 function renderEntry() {
   clearOverlays();          // 从牌桌退回来时别把上一局的弹窗/换人提示留在屏上
   const saved = Net.name();
@@ -242,9 +255,9 @@ function renderEntry() {
           <button class="btn" id="joinBtn">加入</button>
           <button class="btn ghost" id="watchBtn" title="只用对局码看别人打，不占席位">观战</button>
         </div>
-        ${(typeof window !== 'undefined' && window.DF_APP) ? `
+        ${inShell() ? `
           <div class="lobby-actions" style="margin-top:14px">
-            <button class="btn ghost" id="backOffline">← 单人模式</button>
+            <button class="btn ghost" id="backOffline">← 返回单人模式</button>
           </div>` : ''}
       `}
       <div id="apkSlot"></div>

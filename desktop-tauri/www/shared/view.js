@@ -72,9 +72,13 @@ function visibleEvents(S, playerId) {
  *   在战报滚走之后还能在弃牌堆里查到"刚砸的是哪个星系"。）
  */
 function discardEntry(d, S, hideStrikeTargets) {
+  const owner = (S.players || []).find(p => p.id === d.ownerId);
   const out = {
     uid: d.uid, key: d.key, name: d.name, turn: d.turn,
     batch: d.batch || 0, tag: d.tag || 'discard',
+    // 谁打出来的：窄屏没有空间画跨屏箭头，直接把名字写在牌块上
+    actor: d.ownerId || null,
+    actorName: owner ? owner.name : '',
   };
   if (hideStrikeTargets && d.key === 'lock' && d.turn === S.turnIndex && d.targetGalaxy != null) {
     out.targetGalaxy = d.targetGalaxy;
@@ -85,18 +89,23 @@ function discardEntry(d, S, hideStrikeTargets) {
 function viewFor(game, playerId) {
   const S = game.state();
   if (!S) return null;
-  const me = S.players.find(p => p.id === playerId);
+  /* playerId 为空 = 观战：没有「我」这个玩家。
+     观战者拿到的和普通玩家一样只有公开信息——坐标、手牌一律不下发。
+     这里必须自己兜住 me 为空的情况，否则下面 me.galaxy 会直接抛异常。 */
+  const pid = playerId || null;
+  const me = pid ? S.players.find(p => p.id === pid) : null;
+  const spectator = !me;
   const hideStrikeTargets = S.strikeTarget === 'hidden';
 
   const players = S.players.map(p => {
-    const base = publicPlayer(p, playerId, { hideStrikeTargets });
-    if (p.id === playerId) {
+    const base = publicPlayer(p, pid, { hideStrikeTargets });
+    if (me && p.id === pid) {
       base.galaxy = p.galaxy;          // 只有自己知道坐标
       base.hand = p.hand.map(c => ({ uid: c.uid, key: c.key }));
       base.isMe = true;
     } else {
-      base.galaxy = null;              // 其他人：坐标不下发
-      base.hand = null;                // 其他人：手牌不下发
+      base.galaxy = null;              // 其他人（以及观战者的所有人）：坐标不下发
+      base.hand = null;                // 手牌不下发
     }
     return base;
   });
@@ -106,8 +115,8 @@ function viewFor(game, playerId) {
   if (S.broadcast) {
     const B = S.broadcast;
     const collecting = B.stage === 'collecting';
-    const myCand = B.candidates.find(c => c.playerId === playerId);
-    const isCaster = B.casterId === playerId;
+    const myCand = pid ? B.candidates.find(c => c.playerId === pid) : null;
+    const isCaster = !!pid && B.casterId === pid;
     broadcast = {
       casterId: B.casterId,
       // 广播牌的「合作 / 伪装」面要在结算时才翻：除发布者本人，谁都不下发真实 key
@@ -119,7 +128,7 @@ function viewFor(game, playerId) {
       deadline: B.deadline,
       chooseDeadline: B.chooseDeadline || null,
       // 我自己是不是就在被广播的星系（自己的坐标自己知道，不构成泄露）
-      iAmTarget: me.galaxy === B.targetGalaxy,
+      iAmTarget: !!me && me.galaxy === B.targetGalaxy,
       // 只给「有多少人能回应」这个聚合数，不给名单——
       // 名单等于公开「谁手里有能用的广播牌」，属于未打出的手牌信息
       candidateCount: B.candidates.length,
@@ -134,7 +143,7 @@ function viewFor(game, playerId) {
       responders: collecting ? null : Object.entries(B.responses)
         .filter(([, v]) => v)
         .map(([pid]) => ({ playerId: pid })),
-      isMyChoice: !collecting && B.casterId === playerId,
+      isMyChoice: !collecting && isCaster,
       iAmCaster: isCaster,
       myOptions: myCand ? myCand.options : null,
     };
@@ -144,13 +153,14 @@ function viewFor(game, playerId) {
   let escape = null;
   if (S.escapePending) {
     const E = S.escapePending;
-    escape = E.targetId === playerId
+    escape = (pid && E.targetId === pid)
       ? { mine: true, cardUid: E.cardUid, cardKey: E.cardKey, cost: E.cost, deadline: E.deadline }
       : { mine: false, targetId: E.targetId, deadline: E.deadline };
   }
 
   return {
     phase: S.phase,
+    spectator,                    // 观战视图：没有「我」，全部按公开信息下发
     mode: S.mode || 'standard',   // standard / fast，前端据此显示规则与按钮
     // open（默认，全场可见打击目标） / hidden（只公开类型与已飞手数，落地才公布落点）
     strikeTarget: hideStrikeTargets ? 'hidden' : 'open',
@@ -160,6 +170,7 @@ function viewFor(game, playerId) {
     step: S.step,
     thinking: false,   // 由 server 层填充
     actionsThisTurn: S.actionCount || 0,
+    broadcastsThisTurn: S.broadcastsThisTurn || 0,
     discardUsed: !!S.discardUsed,
     players,
     deckCount: S.deck.length,
@@ -175,7 +186,7 @@ function viewFor(game, playerId) {
     endReason: S.endReason || null,
     // 结构化公开事件（与日志同源）：AI 的记忆来源，也是回放的原料。
     // 隐藏打击目标时，别人的发射/撤回/坠毁事件会被摘掉目的地。
-    events: visibleEvents(S, playerId),
+    events: visibleEvents(S, pid),
     log: S.log.slice(0, 60),
     me: me ? { id: me.id, seat: me.seat, name: me.name, galaxy: me.galaxy, alive: me.alive, energy: me.energy } : null,
     galaxyNames: GALAXY_NAMES,

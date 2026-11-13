@@ -1005,6 +1005,33 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     w.Net.room = null;
   }
 
+  console.log('=== UI 25. 桌面壳的联机入口要有回到单机的出口 ===');
+  {
+    // 网页版：没有单机页，不该出现这个按钮
+    w.eval(`delete window.DF_APP; delete window.DF_DESKTOP; window.Net.local = false;`);
+    show(null, null);
+    ok(!w.document.querySelector('#backOffline'), '普通网页不该出现「返回单人模式」');
+
+    // 安卓壳
+    w.eval(`window.DF_APP = 1;`);
+    show(null, null);
+    ok(!!w.document.querySelector('#backOffline'), 'APK 联机页应能回到单机页');
+    w.eval(`delete window.DF_APP;`);
+
+    // 桌面壳（Tauri / Electron）
+    // 这里以前只认 DF_APP，桌面版点完「联机对局」就再也回不到单机了
+    w.eval(`window.DF_DESKTOP = 1;`);
+    show(null, null);
+    const back = w.document.querySelector('#backOffline');
+    ok(!!back, '桌面壳的联机入口必须有「返回单人模式」');
+    ok(back && /返回单人模式/.test(back.textContent), '按钮文案应写「返回单人模式」');
+    w.eval(`delete window.DF_DESKTOP; window.Net.local = true;`);
+    show(null, null);
+
+    // 单机页自己要有去联机的入口（来回都得通）
+    ok(!!w.document.querySelector('#onlineBtn'), '单机入口应有「联机对局」');
+  }
+
   console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();

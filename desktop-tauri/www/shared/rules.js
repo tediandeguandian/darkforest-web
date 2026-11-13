@@ -13,12 +13,11 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (C) {
 
   const { INF, CARD_DEFS, GALAXY_NAMES, ADJACENCY, galaxyDistance, buildDeck } = C;
+  // 拆除返还：老版本 cards.js 没有这个函数时退回同一套取整规则
+  const demolishRefund = C.demolishRefund || (k => (CARD_DEFS[k] ? Math.floor(CARD_DEFS[k].cost / 2) : 0));
   // 广播牌在结算前不对外暴露合作/伪装
   const hideFace = C.hideFace || (k => k);
   const familyName = C.familyName || (k => (CARD_DEFS[k] ? CARD_DEFS[k].name : k));
-
-  /* 回合开始的随机补给：基础 1 点之外，另有这一概率额外 +1 */
-  const BONUS_INCOME_CHANCE = 0.5;
 
   /* 回合上限：到这个回合还没分出胜负就按能量收局（人类局也要有兜底，不能只靠 AI 自己收手） */
   const MAX_TURNS = 240;
@@ -42,14 +41,18 @@
      *   fast     —— 行动阶段可以先弃牌换牌再出牌；回合开始 + 回合结束各补一次
      */
     const MODE = (opts && opts.mode === 'fast') ? 'fast' : 'standard';
+    /* 广播收集阶段的等待上限（毫秒）：联机 60 秒（人可能不在）；
+       本地局人就在现场，用 15 秒（local.js 传 broadcastWaitMs）——
+       否则人机每发一次广播就要干等一分钟，看着就像"AI 卡住了"。 */
+    const BROADCAST_WAIT = Number((opts && opts.broadcastWaitMs) || 60000);
     /**
      * 打击目标显示（房间设置）：
-     *   open   —— 默认，与旧版完全一致：打击正面朝上，全场看到「谁 → 哪个星系」
-     *   hidden —— 只公开「谁打了哪一种、已飞几手」，目标星系与距离不下发；
+     *   hidden —— **默认**：只公开「谁打了哪一种、已飞几手」，目标星系与距离不下发；
      *             **打击生效那一刻**才公布落点。发起者自己始终能看到自己的目标。
+     *   open   —— 与旧版一致：打击正面朝上，全场看到「谁 → 哪个星系」。
      * 注意：`科技锁死` 是 immediate 牌，打出即生效，所以它的落点当回合就是公开的。
      */
-    const STRIKE_TARGET = (opts && opts.strikeTarget === 'hidden') ? 'hidden' : 'open';
+    const STRIKE_TARGET = (opts && opts.strikeTarget === 'open') ? 'open' : 'hidden';
     /** 当前是否隐藏打击目标——只读 S，才能让 hydrate 吃旧快照 */
     const blindStrikes = () => S.strikeTarget === 'hidden';
 
@@ -115,6 +118,8 @@
         endReason: null,   // last_stand / heat_death，决定结算界面怎么说
         actionCount: 0,    // 本回合已行动次数（AI 用来判断何时收手）
         discardUsed: false, // 本回合是否已弃置过（每回合只能弃一次，但可一次弃多张）
+        roundNo: 0,         // 全场转完一圈 +1（座位号回绕时），阵亡者遗留打击按它推进
+        deadTickRound: 0,   // 阵亡者遗留打击已推进到第几轮（一轮只推一次）
         events: [],        // 结构化公开事件（与日志同源，供 AI 记忆 / 复盘）
         eventSeq: 0,
         theme: '赫尔辛根莫斯肯',
@@ -166,9 +171,13 @@
       S.step = 'production';
       S.broadcast = null;
       S.actionCount = 0;
+      S.broadcastsThisTurn = 0;   // 本回合已发广播次数（AI 一回合只发一次）
       S.discardUsed = false;
 
       tickStrikes(p);
+      if (S.phase !== 'playing') return;
+      // 已阵亡玩家遗留的打击：按"每轮一手"继续飞（他们自己没有回合了）
+      tickDeadStrikes();
       if (S.phase !== 'playing') return;
       // 极端情况：玩家跃迁后正好落进自己先前发射的打击目标，被自己打死
       if (!p.alive) { nextPlayer(); return; }
@@ -193,14 +202,10 @@
         gain += def.income;
         detail.push(`${def.short}+${def.income}`);
       });
-      // 回合开始的随机补给：有一半概率再白拿 1 点
-      const bonus = Math.random() < BONUS_INCOME_CHANCE ? 1 : 0;
-      gain += bonus;
-
       const prodBefore = p.energy;
       p.energy += gain;
       noteEnergy(p, prodBefore, 'production');
-      log(`${p.name} 进入回合：基础 1${bonus ? '、随机补给 +1' : ''}${detail.length ? '，' + detail.join('、') : ''} → 能量 ${p.energy}`, 'production');
+      log(`${p.name} 进入回合：基础 1${detail.length ? '，' + detail.join('、') : ''} → 能量 ${p.energy}`, 'production');
       S.step = 'action';
     }
 
@@ -217,6 +222,41 @@
     }
 
     /**
+     * 阵亡者遗留的打击。
+     *
+     * 规则：文明被清理后，**已经发射出去的打击不会消失**，仍按原计划飞完。
+     * （否则"抢先打死发射者"就等于免费拦截，和卡面写的"发射后无法拦截"自相矛盾。）
+     *
+     * 推进节奏：死者没有自己的回合了，按"每整轮 +1 手"补上——活着的玩家本来就是
+     * 每轮各有一个回合、每次 +1 手，两者节奏完全一致，落点不会被"死亡"推迟或提前。
+     *
+     * ⚠️ 轮次必须用 S.roundNo（座位号转回小号时才 +1），**不能**用
+     *    `floor((turnIndex-1)/人数)`：有人阵亡后每轮只剩更少的回合，而 turnIndex
+     *    仍然一格一格涨，除出来的一"轮"会被拉长（3 人局死 1 人 → 慢 1.5 倍）。
+     *
+     * 用 S.deadTickRound 去重：一轮只推一次，不会因为 nextPlayer 递归进 beginTurn 而连推。
+     */
+    function tickDeadStrikes() {
+      const round = S.roundNo || 0;
+      if (S.deadTickRound === round) return;
+      S.deadTickRound = round;
+
+      const due = [];
+      S.players.forEach(p => {
+        if (p.alive) return;                    // 活人有自己的回合，走 tickStrikes
+        p.strikes.forEach(st => {
+          if (st.resolved) return;
+          // 本轮才打出去的别急着推：它还没飞完一轮
+          if (st.createdAtTurn === S.turnIndex) return;
+          st.progress++;
+          if (st.progress >= st.required) due.push(st);
+        });
+      });
+      // 和 tickStrikes 同一条原则：一旦要等光速飞船的决定，后面的留到下个回合
+      due.forEach(st => { if (!S.escapePending && S.phase === 'playing') resolveStrike(st); });
+    }
+
+    /**
      * 当前玩家已经出局时把回合交出去。
      * 典型的触发场景：朝自己所在星系开火（距离 0，立即结算），把自己打死了——
      * 这时没有人会替他点"结束回合"，不主动交棒整局就停在一个死人身上。
@@ -230,12 +270,16 @@
 
     function nextPlayer() {
       if (S.phase !== 'playing') return;
+      const prevSeat = S.players[S.currentIdx].seat;
       let guard = 0;
       do {
         S.currentIdx = (S.currentIdx + 1) % S.players.length;
         guard++;
       } while (!S.players[S.currentIdx].alive && guard < S.players.length * 2);
       if (alivePlayers().length <= 1) return endGame();
+      // 座位号绕回小号 = 全场转完一圈。阵亡者的遗留打击按这个节奏推进
+      // （不能用 turnIndex/人数：死人不再产生回合，那样算出来的一轮会被拉长）
+      if (S.players[S.currentIdx].seat <= prevSeat) S.roundNo = (S.roundNo || 0) + 1;
       S.turnIndex++;
       beginTurn();
     }
@@ -313,6 +357,28 @@
       return { ok: true };
     }
 
+    /* ---------- 拆除建设牌 ----------
+       返还建造费的一半（向下取整）。算一次行动：拆完本回合就结束了，
+       标准局里也不能再弃牌——否则"拆了重建成环"会变成免费的能量搬运。 */
+    function demolish(playerId, cardUid) {
+      const c = canAct(playerId); if (!c.ok) return c;
+      const p = c.p;
+      const i = p.buildZone.findIndex(x => x.uid === cardUid);
+      if (i < 0) return { ok: false, msg: '建设区里没有这张牌' };
+      const card = p.buildZone[i], def = CARD_DEFS[card.key];
+      const refund = demolishRefund(card.key);
+
+      p.buildZone.splice(i, 1);
+      const before = p.energy;
+      p.energy += refund;
+      noteEnergy(p, before, 'demolish');
+      pushDiscard(card, p.id, { batch: nextBatch(), tag: 'demolish' });
+      log(`${p.name} 拆除「${def.name}」（+${refund} 能量）`, 'build');
+      ev('build_remove', { actor: p.id, card: card.key, refund });
+      markActed();
+      return { ok: true, refund };
+    }
+
     /* ---------- 广播 ---------- */
     function playBroadcast(playerId, cardUid, targetGalaxy) {
       const c = canAct(playerId); if (!c.ok) return c;
@@ -360,13 +426,20 @@
         stage: 'collecting',
         createdAt: now,
         // 有人能回应：最多等 60 秒；没人能回应：随机等 5–20 秒后自动结算
-        deadline: now + (candidates.length ? 60000 : 5000 + Math.floor(Math.random() * 15001)),
+        deadline: now + (candidates.length ? BROADCAST_WAIT : 5000 + Math.floor(Math.random() * 15001)),
         chooseDeadline: null,
       };
 
-      // 只公布「谁朝哪儿发了哪种广播」，不公布合作/伪装——那一面结算时才翻
-      log(`${p.name} 发布「${familyName(card.key)}」→ ${GALAXY_NAMES[targetGalaxy]}（距离 ${d}）`, 'broadcast');
-      ev('broadcast_cast', { actor: p.id, family: hideFace(card.key), target: targetGalaxy, distance: d });
+      // 只公布「谁朝哪儿发了哪种广播」，不公布合作/伪装——那一面结算时才翻。
+      // ⚠️ 更不能公布**实际距离**（发布者到目标星系的真实格数）：
+      //    目标星系是公开的，距离一公布，发布者的位置就等于公开了。
+      //    公开的只有「这张牌的射程」——即「发布者在目标星系 N 格以内」，
+      //    这正是观察者本来就能推出来的约束（见设计文档 2.4.1）。
+      const radius = def.dist === INF ? null : def.dist;
+      const rangeText = radius === null ? '任意星系' : `距目标 ≤ ${radius} 格`;
+      log(`${p.name} 发布「${familyName(card.key)}」→ ${GALAXY_NAMES[targetGalaxy]}（${rangeText}）`, 'broadcast');
+      ev('broadcast_cast', { actor: p.id, family: hideFace(card.key), target: targetGalaxy, radius });
+      S.broadcastsThisTurn = (S.broadcastsThisTurn || 0) + 1;
       markActed();
       return { ok: true };
     }
@@ -582,6 +655,16 @@
       return { ok: true };
     }
 
+    /**
+     * 撤回自己发射的打击。
+     *
+     * 刻意**不限时间**：只要还活着、这支打击还在飞，就随时可以撤回——
+     * 不用等自己的回合，广播结算中、别人思考时、光速飞船待决时都可以。
+     * （打击本来就不占行动次数，撤回也不该占；否则"什么时候能后悔"会变成一门额外的规则。）
+     *
+     * 代价：**能量不退**。发射那一刻就把钱烧掉了，撤回只是叫停，不是退款。
+     * 撤回的牌进弃牌堆（明牌），目标不公开——它从没生效，不该因此泄露发射者的坐标。
+     */
     function withdrawStrike(playerId, strikeUid) {
       if (S.phase !== 'playing') return { ok: false, msg: '对局已结束' };
       const p = byId(playerId);
@@ -607,8 +690,13 @@
       const target = targets[0];
 
       if (!target) {
-        log(`「${def.name}」抵达 ${GALAXY_NAMES[st.targetGalaxy]}——空无一人，打击落空`, 'strike');
+        // 战报只写「什么打击抵达什么星系」——不写"空无一人"。
+        // 目标星系有没有人是核心情报，写出来等于给全场一台扫描器。
+        log(`「${def.name}」抵达 ${GALAXY_NAMES[st.targetGalaxy]}`, 'strike');
         ev('strike_miss', { actor: st.casterId, card: st.key, target: st.targetGalaxy });
+        // 光粒 / 湮灭 / 降维打的是"恒星"不是"人"：没人也要摧毁恒星，
+        // 与"被防御时照样摧毁"保持一致（卡面写的就是"无论是否被防御"）。
+        applyGalaxyEffects(st, def);
         if (caster) caster.strikes = caster.strikes.filter(s => s !== st);
         pushDiscard({ uid: st.uid, key: st.key }, st.casterId, { batch: nextBatch(), tag: 'discard' });
         return;
@@ -616,7 +704,6 @@
 
       const defenders = target.buildZone.filter(b => def.level !== INF && CARD_DEFS[b.key].defense >= def.level);
       const defended = defenders.length > 0;
-      const defName = defended ? CARD_DEFS[defenders[0].key].name : '';
       const wouldDie = !defended;
 
       // 科技锁死不杀人，自然轮不到光速飞船，先处理掉
@@ -626,7 +713,7 @@
         log(`${target.name}（${GALAXY_NAMES[st.targetGalaxy]}）的 ${n} 张已建卡牌被科技锁死拆除（玩家存活，能量与手牌不受影响）`, 'strike');
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false, disabled: n });
         // 科技锁死是明牌事件：目标写进弃牌条目，当回合在弃牌堆里查得到
-        finishStrike(st, caster, { noReward: true, targetGalaxy: st.targetGalaxy });
+        finishStrike(st, caster, { killed: false, targetGalaxy: st.targetGalaxy });
         return;
       }
 
@@ -652,19 +739,19 @@
       }
 
       if (defended) {
-        log(`${target.name}（${GALAXY_NAMES[st.targetGalaxy]}）的「${defName}」挡下了「${def.name}」`, 'strike');
+        // 只写"抵达"：谁挡下了不公开——写出来等于告诉全场"那个星系有人，还有防御"
+        log(`「${def.name}」抵达 ${GALAXY_NAMES[st.targetGalaxy]}`, 'strike');
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: true });
         applyGalaxyEffects(st, def);
-        if (def.key === 'annihilate') {
-          discardAllBuilds(target);
-          log(`${target.name} 弃置全部建设牌`, 'strike');
-        }
       } else {
-        eliminate(target, `被「${def.name}」命中 · ${GALAXY_NAMES[st.targetGalaxy]}`);
+        // 死讯本来就是公开的（座位卡会变灰），但理由里不再重复星系位置
+        eliminate(target, `被「${def.name}」命中`);
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false });
         applyGalaxyEffects(st, def);
+        log(`「${def.name}」抵达 ${GALAXY_NAMES[st.targetGalaxy]}`, 'strike');
       }
-      finishStrike(st, caster);
+      // 只有真把人打死才配拿清场奖励；被挡下只是"打了，没死"
+      finishStrike(st, caster, { killed: !defended });
     }
 
     function applyGalaxyEffects(st, def) {
@@ -715,7 +802,7 @@
         eliminate(target, `被「${sdef.name}」命中 · ${GALAXY_NAMES[st.targetGalaxy]}`);
         ev('strike_hit', { actor: st.casterId, card: st.key, target: st.targetGalaxy, defended: false });
         applyGalaxyEffects(st, sdef);
-        finishStrike(st, caster);
+        finishStrike(st, caster, { killed: true });
       }
 
       if (S.phase !== 'playing') return { ok: true };
@@ -764,7 +851,7 @@
       if (!empties.length) {
         log(`${target.name} 启动光速飞船，但已无空星系可去`, 'strike');
         eliminate(target, '无处可逃');
-        finishStrike(st, byId(st.casterId));
+        finishStrike(st, byId(st.casterId), { killed: true });
         return;
       }
       const dest = empties[Math.floor(Math.random() * empties.length)];
@@ -773,18 +860,22 @@
       // 跃迁是随机的，落点只有他自己知道——对外只公布"他跑了"
       log(`${target.name} 启动光速飞船，撤离 ${GALAXY_NAMES[from]}（去向不明；弃全部建设牌与能量）`, 'strike');
       ev('lightship', { actor: target.id, from });
-      finishStrike(st, byId(st.casterId));
+      // 目标成功逃跑：没人被淘汰，不给清场奖励（曾经的 bug 这里也发）
+      finishStrike(st, byId(st.casterId), { killed: false });
     }
 
     function finishStrike(st, caster, opts) {
       const alive = alivePlayers().length;
-      // 科技锁死不杀人，自然也没有清场奖励
-      if (!(opts && opts.noReward) && caster && caster.alive) {
+      // 清场奖励只发给**真淘汰了人**的打击。
+      // ⚠️ 曾经的 bug：奖励挂在"打击结束"上，被挡下、目标乘光速飞船逃跑都会触发，
+      //    3 人局白送 9 能量——玩家没淘汰任何人却能量暴涨，就是这个原因。
+      //    科技锁死（killed:false）、打击落空（提前 return 不走这里）同理不给。
+      if (opts && opts.killed && caster && caster.alive) {
         const reward = alive * 3;
         const rewardBefore = caster.energy;
         caster.energy += reward;
         noteEnergy(caster, rewardBefore, 'reward');
-        log(`${caster.name} 获得清场奖励 +${reward} 能量（剩余 ${alive} 人）`, 'strike');
+        log(`${caster.name} 获得清场奖励 +${reward} 能量（剩余 ${alive} 人）`, 'reward');
       }
       if (caster) caster.strikes = caster.strikes.filter(s => s !== st);
       // opts.targetGalaxy 只在「科技锁死」这类当回合就公开落点的牌上带
@@ -806,16 +897,13 @@
       log(`${p.name} 被淘汰（${reason}）`, 'elim');
       ev('eliminate', { actor: p.id, galaxy: p.galaxy });
 
-      // 文明毁灭后，它自己还在飞的打击失去制导——否则会永远挂在星图上没人推进
+      // 注意：**不清空 p.strikes**。
+      // 打击一旦发射就脱离发射者的控制，文明毁灭不会把它拦下来——它按原计划飞完，
+      // 落点照常结算（死者的击杀不拿清场奖励，见 finishStrike）。
+      // 推进由 beginTurn 里的 tickDeadStrikes 按轮补上。
       const flying = p.strikes.filter(s => !s.resolved);
       if (flying.length) {
-        p.strikes = p.strikes.filter(s => s.resolved);
-        const fb = nextBatch();
-        flying.forEach(st => pushDiscard({ uid: st.uid, key: st.key }, p.id, { batch: fb, tag: 'discard' }));
-        log(`${p.name} 在飞的 ${flying.length} 枚打击失去制导，坠入虚空`, 'elim');
-        flying.forEach(st => ev('strike_void', blindStrikes()
-          ? { actor: p.id, card: st.key }
-          : { actor: p.id, card: st.key, target: st.targetGalaxy }));
+        log(`${p.name} 已毁灭，但它发射的 ${flying.length} 枚打击仍在飞行`, 'elim');
       }
       const hand = p.hand.splice(0, p.hand.length);
       const hb = nextBatch();
@@ -921,7 +1009,7 @@
 
     const api = {
       newGame, state: () => S, currentPlayer: () => S.players[S.currentIdx], byId, alivePlayers,
-      playBuild, playBroadcast, setResponse, responsesComplete, finalizeBroadcast, chooseResponder,
+      playBuild, demolish, playBroadcast, setResponse, responsesComplete, finalizeBroadcast, chooseResponder,
       playStrike, withdrawStrike, discardCards, endTurn, validTargets, forceEnd, tickBroadcast,
       chooseEscape, tickEscape,
       playerNames: () => S.players.map(p => p.name),
@@ -929,8 +1017,10 @@
       hydrate(snapshot) {
         S = snapshot;
         S.mode = S.mode || 'standard';   // 旧快照没有这个字段
-        // 旧快照没有打击目标设置 → 退回 open（与旧版行为一致）
-        S.strikeTarget = S.strikeTarget === 'hidden' ? 'hidden' : 'open';
+        // 旧快照没有打击目标设置 → 用新默认 hidden（只有明确存了 open 的老局保持公开）
+        S.strikeTarget = S.strikeTarget === 'open' ? 'open' : 'hidden';
+        if (typeof S.roundNo !== 'number') S.roundNo = 0;
+        if (typeof S.deadTickRound !== 'number') S.deadTickRound = S.roundNo;
         S.events = S.events || [];
         S.eventSeq = S.eventSeq || (S.events.length ? S.events[S.events.length - 1].id : 0);
         return api;

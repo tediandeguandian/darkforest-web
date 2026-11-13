@@ -13,6 +13,10 @@ worker/public/
 # 本地预览快照（截图脚本产物）
 web/_preview.html
 
+# 构建时散落在仓库根目录的安装包（正式产物在 web/download 与 Release）
+/*.apk
+/*.dmg
+
 # 系统与编辑器
 .DS_Store
 *.swp

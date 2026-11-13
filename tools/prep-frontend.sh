@@ -39,13 +39,17 @@ sed 's|\.\./shared/|shared/|g' "$ROOT/web/local.html" \
   > "$OUT/index.html"
 
 # 联机页
+#   DF_SERVER  —— 拼联机地址
+#   DF_DESKTOP —— 告诉 ui.js「这是桌面壳」：联机页要挂一个「← 单人模式」的返回按钮。
+#                 光靠 DF_APP 不行（那是安卓壳，桌面版没有原生桥）；靠协议判断也不行
+#                 （Tauri 在 macOS 是 tauri://，Windows 是 http://tauri.localhost）。
 ROOT="$ROOT" SERVER="$SERVER" OUT="$OUT" node -e '
 const fs = require("fs");
 let s = fs.readFileSync(process.env.ROOT + "/web/index.html", "utf8");
 s = s.replace(/"\/shared\//g, "\"shared/")
      .replace(/"\/web\/js\//g, "\"js/")
      .replace(/"\/web\/style\.css"/g, "\"style.css\"")
-     .replace("</head>", "<script>window.DF_SERVER=\"" + process.env.SERVER + "\";</script></head>");
+     .replace("</head>", "<script>window.DF_SERVER=\"" + process.env.SERVER + "\";window.DF_DESKTOP=1;</script></head>");
 fs.writeFileSync(process.env.OUT + "/online.html", s);
 '
 

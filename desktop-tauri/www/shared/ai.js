@@ -65,15 +65,26 @@
       let cand = new Set(live);
 
       for (const e of memory) {
-        // 全局事实：打击落空 / 命中，都说明「那一刻该星系有人/没人」。
-        // 命中意味着有人（已淘汰），落空意味着没人——两种都能把该星系从所有人的候选里划掉。
-        if (e.type === 'strike_miss' || e.type === 'strike_hit') {
-          cand.delete(e.target);
+        // 打击结果不再是公开情报（战报只写"什么打击抵达什么星系"），AI 必须和人看到的一样多：
+        //   · 打空：只有自己打空才知道那儿当时没人；别人打空不公开
+        //   · 命中（真打死了人）：死讯公开，可以划掉
+        //   · 被挡下：既不公开死了人也没公开谁挡的，不能划掉
+        if (e.type === 'strike_miss') {
+          if (e.actor === meId) cand.delete(e.target);
+          continue;
+        }
+        if (e.type === 'strike_hit') {
+          if (!e.defended) cand.delete(e.target);
           continue;
         }
         if (e.actor !== o.id) continue;
         if (e.type === 'broadcast_cast') {
-          cand = new Set([...cand].filter(g => galaxyDistance(g, e.target) <= e.distance));
+          // 公开的只有这张牌的射程：发布者在目标星系 radius 格以内。
+          // 超距广播（radius 为 null）不构成任何约束，一个候选都不能划掉。
+          // ⚠️ 这里绝不能去用「实际距离」——那等于让 AI 拿到人眼看不到的坐标信息。
+          if (e.radius != null) {
+            cand = new Set([...cand].filter(g => galaxyDistance(g, e.target) <= e.radius));
+          }
         } else if (e.type === 'broadcast_response') {
           const lim = CARD_DEFS[e.card] ? CARD_DEFS[e.card].dist : 2;
           cand = new Set([...cand].filter(g => galaxyDistance(g, e.target) <= lim));
@@ -218,7 +229,11 @@
       }
 
       /* D. 广播：拿信息（也顺手赚 1 点） */
-      const casts = ofType('broadcast').filter(x => energy >= x.def.cost + 1);
+      // 一回合只发一次广播：每发一次就要等一轮回应（联机 60 秒 / 本地 15 秒），
+      // 连发两次就是两轮干等——那正是「AI 看起来不动」的观感来源。
+      const casts = (view.broadcastsThisTurn || 0) < 1
+        ? ofType('broadcast').filter(x => energy >= x.def.cost + 1)
+        : [];
       if (casts.length) {
         const pick = pickProbe(view, me, cands, casts, memory);
         if (pick) return { type: 'broadcast', uid: pick.card.uid, galaxy: pick.galaxy };
@@ -284,9 +299,10 @@
             const hasShip = o.buildZone.some(b => CARD_DEFS[b.key].escape);
             // 命中：清场奖励 3×存活人数；被挡：只熄恒星，值一点；有船：他跑了但清空基建
             // 被挡下时的价值：湮灭会清空对方所有建设牌（开罐器），远高于普通被挡
+            // 清场奖励 = 淘汰后剩余人数 × 3（自己也会少一个，所以要减 1）
             const gain = blocked
               ? (card.def.destroyBuilds ? 2.6 : 0.6)
-              : (hasShip ? 2.0 : 3 * alive);
+              : (hasShip ? 2.0 : 3 * Math.max(0, alive - 1));
             exp += p * gain;
           }
           exp -= card.def.cost * 0.55;                          // 造价与暴露风险折算
@@ -356,6 +372,7 @@
     if (!a) return { ok: false, msg: 'no action' };
     switch (a.type) {
       case 'build':     return game.playBuild(playerId, a.uid);
+      case 'demolish':  return game.demolish(playerId, a.uid);
       case 'broadcast': return game.playBroadcast(playerId, a.uid, a.galaxy);
       case 'strike':    return game.playStrike(playerId, a.uid, a.galaxy);
       case 'discard':   return game.discardCards(playerId, a.uids || []);
@@ -452,7 +469,14 @@
 
       const ai = ais.get(cur.id) || ais.set(cur.id, createAI(cur.id, seat.level, seat.seed || 1)).get(cur.id);
       const act = ai.decide(viewFor(game, cur.id));
-      if (!act) return played;
+      // 兜底：AI 拿不出动作时**收手**，绝不能空转。
+      // 空动作 = runAI 返回空数组 = 本地驱动以为「AI 没事做」就退出循环，
+      // 而局面还停在 AI 的回合上 —— 牌桌从此干等到天荒地老（曾表现为"智子 5 分钟不动"）。
+      if (!act) {
+        const end = applyAction(game, cur.id, { type: 'end' });
+        played.push({ actor: cur.id, act: { type: 'end' }, ok: end.ok });
+        break;
+      }
 
       const r = applyAction(game, cur.id, act);
       played.push({ actor: cur.id, act, ok: r.ok, msg: r.msg });
@@ -465,6 +489,24 @@
       }
       if (o.onStep) o.onStep(game);
       if (act.type === 'end') continue;          // 换下一个（可能还是 AI）
+    }
+    /* 收尾兜底（关键）：
+       走到这里说明这一轮 AI 一个动作都没做，但局面**可能仍然停在 AI 的回合上**。
+       最典型的就是：AI 发了广播、但那张牌够不着任何人（候选为空）——
+       引擎会在同一个循环里把这轮广播自动结算掉，然后 continue 结束本轮，
+       于是本轮"没做任何事"就返回了空数组。
+       上层（本地驱动）看到空数组会以为"AI 没事做"而退出循环，
+       可局面还停在 AI 的回合上 —— 没有任何东西会再唤醒它，牌桌就此冻结。
+       （曾表现为：本地局里「智子」5 分钟以上一动不动。）
+       所以这里再兜一次底：只要局面还等着 AI 行动，就替它收手，把回合交出去。 */
+    const SS = game.state();
+    if (!played.length && SS && SS.phase === 'playing' && !SS.broadcast && !SS.escapePending) {
+      const cur2 = SS.players[SS.currentIdx];
+      const seat2 = cur2 && getSeat(cur2.id);
+      if (seat2 && cur2.alive && SS.step === 'action') {
+        const end = applyAction(game, cur2.id, { type: 'end' });
+        played.push({ actor: cur2.id, act: { type: 'end' }, ok: end.ok });
+      }
     }
     return played;
   }

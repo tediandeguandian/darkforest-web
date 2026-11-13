@@ -38,7 +38,7 @@ let s = fs.readFileSync(process.env.ROOT + "/web/index.html", "utf8");
 s = s.replace(/"\/shared\//g, "\"shared/")
      .replace(/"\/web\/js\//g, "\"js/")
      .replace(/"\/web\/style\.css"/g, "\"style.css\"")
-     .replace("</head>", "<script>window.DF_SERVER=\"https://darkforest.dpdns.org\";</script></head>");
+     .replace("</head>", "<script>window.DF_SERVER=\"https://darkforest.dpdns.org\";window.DF_DESKTOP=1;</script></head>");
 fs.writeFileSync("www/online.html", s);
 '
 

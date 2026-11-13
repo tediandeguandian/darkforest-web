@@ -299,6 +299,8 @@ a{color:var(--cyan)}
 .lobby-actions > .btn{flex:1;padding:13px 16px;font-size:13.5px}
 .lobby-actions > .btn.ghost,
 .lobby-actions > #leaveLobby{flex:0 0 auto;padding-left:20px;padding-right:20px}
+/* 「返回单人模式」单独占一行：窄按钮贴在左边像是没对齐，铺满更好找 */
+.lobby-entry .lobby-actions > #backOffline{flex:1 1 100%;font-size:13px}
 .lobby-entry .divider{margin:26px 0 2px}
 .lobby-entry .lobby-actions{margin-top:14px}
 .lobby-entry .hint{color:var(--faint);font-size:11.5px;text-align:center;margin:20px 0 0;line-height:1.7}

@@ -32,7 +32,11 @@ jobs:
       - name: 生成 icon.icns（macOS 打包必需）
         run: |
           set -e
-          SRC=apk/icon/source-ai-1024.png
+          # 必须用 macos-1024.png：它是「1024 画布 + 824 圆角方块居中」的 Big Sur 网格版，
+          # Dock 里才和系统设置一样大。source-ai-1024.png 是铺满画布的母版（安卓/Windows 用），
+          # 拿它做 icns 会整整大一圈。两者都由 tools/mac-icon.py 维护。
+          SRC=apk/icon/macos-1024.png
+          [ -f "$SRC" ] || SRC=apk/icon/source-ai-1024.png
           [ -f "$SRC" ] || SRC=desktop-tauri/src-tauri/icons/icon.png
           rm -rf /tmp/icon.iconset && mkdir -p /tmp/icon.iconset
           for s in 16 32 64 128 256 512; do
