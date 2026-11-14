@@ -46,6 +46,8 @@ w.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
   window.__UI = UI;
   window.__render = render;
   window.__setConnHint = setConnHint;
+  window.__stashHandoff = stashHandoff;
+  window.__syncAIFoldWide = syncAIFoldWide;
 `);
 
 function show(view, pid) {
@@ -1127,6 +1129,81 @@ console.log('=== UI 10. 对局中换星空背景 ===');
 
     // 单机页自己要有去联机的入口（来回都得通）
     ok(!!w.document.querySelector('#onlineBtn'), '单机入口应有「联机对局」');
+  }
+
+  console.log('=== UI 26. 壳内换页：交接首帧、跳过入场动画 ===');
+  {
+    // 各端 HTML 都由这两个源页面生成，交接脚本必须同时存在
+    ['web/local.html', 'web/index.html'].forEach(f => {
+      const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      ok(/df_handoff/.test(src) && /DF_HANDOFF/.test(src), f + ' 应有首帧交接脚本');
+      ok(/location\.hash === '#df'/.test(src), f + ' 应有 hash 兜底（file:// 不共享 storage）');
+    });
+    const uiSrc = fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8');
+    ok(/location\.href = url \+ '#df'/.test(uiSrc), 'goShell 应带 #df 交接标记');
+    ok(/goShell\('online\.html'\)/.test(uiSrc) && /goShell\('index\.html'\)/.test(uiSrc),
+      '单机 ⇄ 联机两个方向都要走交接跳转');
+
+    // 跳之前确实把当前画面存下来了
+    w.eval(`delete window.DF_HANDOFF; window.Net.view = null; window.Net.room = null;`);
+    w.__render();
+    try { w.sessionStorage.removeItem('df_handoff'); } catch (e) {}
+    w.__stashHandoff();
+    let saved = null;
+    try { saved = JSON.parse(w.sessionStorage.getItem('df_handoff')); } catch (e) {}
+    ok(!!saved && typeof saved.html === 'string' && saved.html.length > 0, '应存下当前 #app 的画面');
+    ok(!!saved && typeof saved.at === 'number', '应带时间戳（过期的画面不贴）');
+
+    // 目标页：交接标记在，本次渲染不许播整屏入场
+    const app = w.document.querySelector('#app');
+    app.style.pointerEvents = 'none';
+    w.eval(`window.DF_HANDOFF = 1; window.__UI.scene = null; window.__UI.sceneTimer = null;`);
+    w.__render();
+    ok(!app.classList.contains('scene-in'), '交接首帧不该再挂 scene-in（整屏淡入就是「闪一下」）');
+    ok(w.DF_HANDOFF === 0, '交接标记应被消费掉，之后换场景照常播入场');
+    ok(app.style.pointerEvents !== 'none', '占位画面的点击禁用应被解除');
+
+    // 之后真正的场景切换仍要有入场
+    w.eval(`window.__UI.scene = null;`);
+    w.__render();
+    ok(app.classList.contains('scene-in'), '非交接的换场景仍应播入场动画');
+    w.eval(`window.__UI.sceneTimer = null;`);
+  }
+
+  console.log('=== UI 27. 大厅宽屏两栏：藏掉 −/+ 且不再折叠 ===');
+  {
+    w.eval(`window.matchMedia = q => ({ matches: /min-width: 821px/.test(q), media: q,
+      addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){} });`);
+    w.eval(`window.__UI.foldWide = null; window.__UI.aiFoldOpen = false;`);
+    w.Net.view = null;
+    w.Net.me = { playerId: 'p0' };
+    w.Net.room = {
+      roomId: 'ABCDE', hostId: 'p0', mode: 'standard', strikeTarget: 'hidden',
+      seats: [
+        { playerId: 'p0', name: 'A', connected: true, isAI: false },
+        { playerId: 'p1', name: 'B', connected: true, isAI: true, aiLevel: 'sophon' },
+      ],
+      levels: [],
+    };
+    w.__render();
+    const fold = w.document.querySelector('#aiFold');
+    ok(!!fold && fold.classList.contains('wide'), '宽屏应给「添加对手」打上 .wide');
+    ok(fold.getAttribute('data-open') === '1', '宽屏两栏应恒展开');
+    w.document.querySelector('#aiFoldBtn').click();
+    ok(fold.getAttribute('data-open') === '1', '宽屏点标题不该折叠（符号已藏，收起就展不开了）');
+    const css = fs.readFileSync(path.join(ROOT, 'web/style.css'), 'utf8');
+    ok(/\.fold\.wide \.fold-head::after\{display:none\}/.test(css), 'CSS 应藏掉 −/+ 符号');
+    ok(/\.fold\.wide \.fold-head\{cursor:default\}/.test(css), '宽屏标题不该还像按钮');
+
+    // 拖回窄屏：−/+ 与折叠能力都回来，并恢复用户上次的选择
+    w.eval(`window.matchMedia = q => ({ matches: false, media: q,
+      addListener(){}, removeListener(){}, addEventListener(){}, removeEventListener(){} });`);
+    w.__render();
+    ok(!fold.classList.contains('wide'), '窄屏应摘掉 .wide');
+    ok(fold.getAttribute('data-open') === '0', '回到窄屏应恢复用户上次的收起状态');
+    w.document.querySelector('#aiFoldBtn').click();
+    ok(fold.getAttribute('data-open') === '1', '窄屏点标题应能正常展开');
+    w.eval(`delete window.matchMedia;`);
   }
 
   console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);

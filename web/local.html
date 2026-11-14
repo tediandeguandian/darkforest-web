@@ -11,6 +11,28 @@
 </head>
 <body>
 <div id="app"></div>
+<script>
+/* 壳内两个页面互相跳（单机 ⇄ 联机）：整页导航会先白一帧、再把整屏入场动画
+   重播一遍，看着就是「闪一下」。这里把上一页交过来的画面同步贴进 #app，
+   让首帧就不空；同时打标记，ui.js 的首次渲染会跳过入场动画。
+   必须放在 #app 之后、其它脚本之前 —— 越早执行越不会露出空白帧。 */
+(function () {
+  var fresh = location.hash === '#df';
+  var raw = null, app = document.getElementById('app');
+  try { raw = sessionStorage.getItem('df_handoff'); } catch (e) {}
+  if (!raw && !fresh) return;
+  try { sessionStorage.removeItem('df_handoff'); } catch (e) {}
+  // 标记本次是「壳内换页」：ui.js 的首次渲染不再播整屏入场动画。
+  // hash 是兜底 —— file:// 下两个页面未必共享 sessionStorage，但 hash 一定带得过来。
+  window.DF_HANDOFF = 1;
+  var d = null;
+  try { d = JSON.parse(raw || 'null'); } catch (e) {}
+  if (app && d && d.html && Date.now() - d.at < 3000) {
+    app.innerHTML = d.html;
+    app.style.pointerEvents = 'none';   // 占位画面上的按钮没绑事件，先别让人点到
+  }
+})();
+</script>
 <div class="conn" id="conn">连接已断开，正在重连…</div>
 
 <script src="../shared/cards.js"></script>

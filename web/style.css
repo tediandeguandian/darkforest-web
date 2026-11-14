@@ -425,6 +425,12 @@ a{color:var(--cyan)}
 }
 .fold[data-open="0"] .fold-body{opacity:0}
 .fold[data-open="1"] .fold-body{opacity:1}
+/* 两栏并排（JS 打上 .wide）：席位与「添加对手」同时可见，不必折叠。
+   藏掉 −/+，标题也不再像按钮 —— 不然用户点一下没反应会以为坏了。 */
+.fold.wide .fold-head{cursor:default}
+.fold.wide .fold-head:hover{background:none;color:var(--txt-2)}
+.fold.wide .fold-head::after{display:none}
+.fold.wide .fold-note{margin-right:0}
 .ai-levels{display:flex;flex-direction:column;gap:5px;padding:0 8px 8px}
 .ai-btn{
   display:grid;grid-template-columns:1fr auto;grid-template-areas:"n r" "b b";

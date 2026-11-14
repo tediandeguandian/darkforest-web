@@ -11,6 +11,24 @@
 </head>
 <body>
 <div id="app"></div>
+<script>
+/* 同 local.html：壳内页面互跳时，首帧先贴上上一页的画面，避免整页导航白一帧
+   + 重播入场动画造成的「闪一下」。ui.js 读到 DF_HANDOFF 会跳过本次入场。 */
+(function () {
+  var fresh = location.hash === '#df';
+  var raw = null, app = document.getElementById('app');
+  try { raw = sessionStorage.getItem('df_handoff'); } catch (e) {}
+  if (!raw && !fresh) return;
+  try { sessionStorage.removeItem('df_handoff'); } catch (e) {}
+  window.DF_HANDOFF = 1;
+  var d = null;
+  try { d = JSON.parse(raw || 'null'); } catch (e) {}
+  if (app && d && d.html && Date.now() - d.at < 3000) {
+    app.innerHTML = d.html;
+    app.style.pointerEvents = 'none';
+  }
+})();
+</script>
 <div class="conn" id="conn">连接已断开，正在重连…</div>
 <script src="/shared/cards.js"></script>
 <script src="/web/js/net.js"></script>

@@ -32,6 +32,7 @@ const UI = {
   calloutHTML: null,   // 上一帧中央提示的内容，变了才播换字动画
   seatSet: null,       // Set(pid)：大厅里已出现过的席位
   aiFoldOpen: null,    // 大厅「添加对手」是否展开（用户手动切过就以他为准）
+  foldWide: null,      // 上一次判定的大厅宽窄（用来在拖窗口时同步折叠态）
   deckCount: null,     // 上一帧牌库数，变了让数字跳一下
   arrowRaf: 0,         // 箭头层当前挂着的 rAF 句柄（0 = 没有链在跑）
   arrowHtml: '',       // 上一帧画出来的 SVG，一样就不再写 DOM
@@ -194,6 +195,27 @@ function pendingBtn(btn, text) {
   }, 8000);
 }
 
+/* ---------- 壳内换页 ----------
+   单机页 ⇄ 联机页是两张独立 HTML，整页导航会先白一帧（新文档的 #app 是空的），
+   随后 DOMContentLoaded 里 render() 再挂上 scene-in 播 440ms 整屏入场 —— 合起来
+   就是点「联机对局」时「面板消失 → 重新淡入」的那一下闪。
+
+   跳之前把当前画面存进 sessionStorage，目标页在 #app 之后同步贴回首帧；
+   #df 是兜底标记：file:// 下两张页面未必共享 sessionStorage，但 hash 一定带得过去，
+   目标页据此跳过本次入场动画（见 markScene）。 */
+function stashHandoff() {
+  try {
+    const app = document.getElementById('app');
+    sessionStorage.setItem('df_handoff', JSON.stringify({
+      at: Date.now(), html: app ? app.innerHTML : '',
+    }));
+  } catch (e) {}
+}
+function goShell(url) {
+  stashHandoff();
+  location.href = url + '#df';
+}
+
 /* 是不是装在壳里（APK / Tauri / Electron）。
    只有壳里才有"单机页"这一说——网页版压根没有 index.html 这个单机入口。
    DF_APP：安卓壳注入；DF_DESKTOP：desktop / desktop-tauri 的 prep 脚本注入；
@@ -307,9 +329,9 @@ function renderEntry() {
 
   // APK 里：单人 ⇄ 联机 两个页面互相跳
   const ob = $('#onlineBtn');
-  if (ob) ob.addEventListener('click', () => { location.href = 'online.html'; });
+  if (ob) ob.addEventListener('click', () => goShell('online.html'));
   const bo = $('#backOffline');
-  if (bo) bo.addEventListener('click', () => { location.href = 'index.html'; });
+  if (bo) bo.addEventListener('click', () => goShell('index.html'));
 
   const pb = $('#prefBtn');
   if (pb) pb.addEventListener('click', openPrefModal);
@@ -896,7 +918,37 @@ function mountLobby() {
   return $('#app .lobby-room');
 }
 
+/* 大厅两栏（>820px）时「席位」和「添加对手」左右并排，空间本来够，
+   折叠反而多余：藏掉 −/+、恒展开、标题不再可点。
+   断点与 style.css 里 .lobby-grid 变单栏的 max-width:820px 对齐。
+   只认一处真源：判定结果打成 .wide class，CSS 也按这个 class 隐藏符号，
+   免得 CSS 媒体查询和 JS 断点以后各自漂移。 */
+const LOBBY_WIDE_MQ = '(min-width: 821px)';
+function lobbyWide() {
+  if (typeof window.matchMedia === 'function') {
+    try { return !!window.matchMedia(LOBBY_WIDE_MQ).matches; } catch (e) {}
+  }
+  return false;   // 没有媒体查询能力（jsdom / 极老 WebView）：保守保留折叠
+}
+
+/* 每次渲染大厅校准一次；拖窗口跨过断点时（底部 resize 监听）也会调。
+   宽屏强制展开但不改 UI.aiFoldOpen —— 回到窄屏还能恢复用户上次的选择。 */
+function syncAIFoldWide() {
+  const fold = $('#aiFold');
+  if (!fold) return;
+  const wide = lobbyWide();
+  fold.classList.toggle('wide', wide);
+  if (wide) {
+    if (fold.dataset.open !== '1') foldSet(fold, true, false);
+  } else if (UI.foldWide === true) {
+    // 刚从宽屏回到窄屏：把用户手动选过的展开/收起还给他
+    if (UI.aiFoldOpen != null) foldSet(fold, UI.aiFoldOpen, false);
+  }
+  UI.foldWide = wide;
+}
+
 function toggleAIFold() {
+  if (lobbyWide()) return;          // 两栏并排：不折叠，符号也藏了
   const fold = $('#aiFold');
   if (!fold) return;
   const open = fold.dataset.open !== '1';
@@ -1031,6 +1083,7 @@ function renderLobby() {
     UI.aiFoldOpen = open;
     foldSet(fold, open, false);
   }
+  syncAIFoldWide();
 }
 
 /* 对局设置：收在右上角的齿轮里，不占大厅版面 */
@@ -2292,6 +2345,9 @@ function toast(msg) {
 
 /* ---------- 主循环 ---------- */
 function render() {
+  // 壳内换页时首帧贴了上一页画面，占位期间禁用了点击；真画面一上来就恢复
+  const appEl = $('#app');
+  if (appEl && appEl.style.pointerEvents === 'none') appEl.style.pointerEvents = '';
   // 回到入口页（已经没有房间会话）就不该留着断线提示条
   if (!Net.roomId) setConnHint(false);
 
@@ -2357,6 +2413,17 @@ function markScene(name) {
   if (!app || UI.scene === name) return;
   UI.scene = name;
   clearTimeout(UI.sceneTimer);
+  /* 壳内换页：首帧已经贴了上一页的画面，这次再播整屏入场就是「闪一下」。
+     直接落到终态，并把 #df 从地址栏抹掉（否则刷新又会命中交接脚本）。 */
+  if (window.DF_HANDOFF) {
+    window.DF_HANDOFF = 0;
+    UI.sceneTimer = null;
+    app.classList.remove('scene-in');
+    try {
+      if (location.hash === '#df') history.replaceState(null, '', location.pathname + location.search);
+    } catch (e) {}
+    return;
+  }
   app.classList.remove('scene-in');
   void app.offsetWidth;            // 强制回流，同名 class 才会重新触发动画
   app.classList.add('scene-in');
@@ -2419,6 +2486,12 @@ setInterval(() => {
   const v = Net.view;
   if (v && v.arrow && Date.now() - v.arrow.at < 16500) scheduleArrow();
 }, 500);
+
+/* 拖窗口跨过 820px 断点：宽屏藏 −/+ 并恒展开，窄屏把折叠能力还回来。
+   renderLobby 每次状态推送也会校准，这里只是让「不推状态时拖窗口」也即时生效。 */
+window.addEventListener('resize', () => {
+  if ($('#aiFold')) syncAIFoldWide();
+});
 
 // 毛玻璃偏好要尽早生效：等到 DOMContentLoaded 再套会先闪一下不透明面板
 applyUiPref(loadUiPref());
