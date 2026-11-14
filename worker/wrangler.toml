@@ -48,6 +48,17 @@ new_sqlite_classes = ["Users"]
 # binding = "META"
 # id = "粘贴你的 namespace id"
 
+# ── 账号体系的发信配置（全部走 secret，别写在这里，仓库是公开的）──
+#   wrangler secret put SMTP_USER     发信邮箱，例如 shuwang@email.cn
+#   wrangler secret put SMTP_PASS     邮箱的「专用密码」，不是登录密码
+#   wrangler secret put SMTP_HOST     可选，默认 smtp.email.cn
+#   wrangler secret put SMTP_PORT     可选，默认 465（25 被平台封了，别用）
+#   wrangler secret put MAIL_FROM     可选，默认同 SMTP_USER
+#   wrangler secret put MAIL_MODE     =console 时不真发信，只把验证码打进日志
+#
+# 没配 SMTP_USER / SMTP_PASS 时，注册与登录照常可用（邮箱本来就是可选项），
+# 但「绑定邮箱」会返回「这台服务器还没配置发信邮箱」。这是部署问题，不是代码问题。
+
 # 人机"思考"时长（毫秒）：玩家能看到人机在犹豫，而不是秒出牌
 [vars]
 AI_THINK_MIN = "3000"
