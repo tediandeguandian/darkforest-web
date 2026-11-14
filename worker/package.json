@@ -2,6 +2,9 @@
   "name": "dark-forest-worker",
   "private": true,
   "version": "0.1.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "sh build.sh",
     "dev": "sh build.sh && wrangler dev",
