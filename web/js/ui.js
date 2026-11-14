@@ -3,6 +3,110 @@
  * 数据源：Net.view（服务端裁剪后的视图）
  * ============================================================ */
 
+/* ============================================================
+ * 卡面矢量图：一张牌一个图案，按名字画，不按类型共用。
+ *
+ * 统一 48×48 画布、currentColor 描边（颜色由卡片容器的 --kind 给：
+ * 建设绿 / 广播青 / 打击红），这里只存图形片段，外壳由 cardArt() 补齐。
+ * 刻意放进 ui.js 而不是新建 .js：各端打包脚本（apk / win / prep / worker）
+ * 是逐个 cp 固定文件名，新增文件得同时改 4 个脚本 + 4 个 HTML，不值当。
+ * 广播的"合作 / 伪装 / 未翻面"是三个不同的 key，也各有独立图案。
+ * ============================================================ */
+const CARD_GLYPHS = {
+  /* ---- 恒星广播：实心恒星向外发波。合作=双侧对称；伪装=单侧虚线（信号残缺） ---- */
+  star_coop: `<circle cx="24" cy="24" r="6.5" fill="currentColor" stroke="none"/>
+    <path d="M13.5 15.5a13 13 0 0 0 0 17M7.5 11a20 20 0 0 0 0 26"/>
+    <path d="M34.5 15.5a13 13 0 0 1 0 17M40.5 11a20 20 0 0 1 0 26"/>`,
+  star_disg: `<circle cx="18" cy="24" r="6.5" fill="currentColor" stroke="none"/>
+    <path d="M28 16a13 13 0 0 1 0 16" stroke-dasharray="4 5"/>
+    <path d="M34.5 11a20 20 0 0 1 0 26" stroke-dasharray="3 7"/>`,
+  star_hidden: `<circle cx="14" cy="15" r="5" fill="currentColor" stroke="none"/>
+    <path d="M26 16a7 7 0 1 1 5.4 6.8c-1.6.7-2 1.8-2 3.4v1.4"/>
+    <circle cx="29.4" cy="35" r="2.2" fill="currentColor" stroke="none"/>`,
+
+  /* ---- 宇宙广播：引力波涟漪。伪装=缺口涟漪 ---- */
+  cosmic_coop: `<circle cx="24" cy="24" r="4.5" fill="currentColor" stroke="none"/>
+    <circle cx="24" cy="24" r="12"/>
+    <circle cx="24" cy="24" r="19.5" stroke-dasharray="6 6"/>`,
+  cosmic_disg: `<circle cx="24" cy="24" r="4.5" fill="currentColor" stroke="none"/>
+    <circle cx="24" cy="24" r="12" stroke-dasharray="14 6"/>
+    <circle cx="24" cy="24" r="19.5" stroke-dasharray="22 9"/>`,
+  cosmic_hidden: `<circle cx="15" cy="15" r="4" fill="currentColor" stroke="none"/>
+    <circle cx="15" cy="15" r="12" stroke-dasharray="5 5"/>
+    <path d="M26 16a7 7 0 1 1 5.4 6.8c-1.6.7-2 1.8-2 3.4v1.4"/>
+    <circle cx="29.4" cy="35" r="2.2" fill="currentColor" stroke="none"/>`,
+
+  /* ---- 超距广播：两张高维膜夹一条投影通道 ---- */
+  ftl_coop: `<path d="M4 13h40M4 35h40"/>
+    <circle cx="15" cy="24" r="6"/><circle cx="33" cy="24" r="6"/>
+    <path d="M21 24h6" stroke-dasharray="2 3"/>`,
+  ftl_disg: `<path d="M4 13h40M4 35h40"/>
+    <circle cx="15" cy="24" r="6"/>
+    <circle cx="33" cy="24" r="6" stroke-dasharray="3 3"/>
+    <path d="M21 24h3M27 24h3" stroke-dasharray="2 4"/>`,
+  ftl_hidden: `<path d="M5 13h14M5 31h14"/>
+    <path d="M26 16a7 7 0 1 1 5.4 6.8c-1.6.7-2 1.8-2 3.4v1.4"/>
+    <circle cx="29.4" cy="35" r="2.2" fill="currentColor" stroke="none"/>`,
+
+  /* ---- 打击 ---- */
+  lock: `<rect x="13" y="21" width="22" height="17" rx="3.5"/>
+    <path d="M18 21v-4.5a6 6 0 0 1 12 0V21"/>
+    <circle cx="24" cy="28" r="2.4" fill="currentColor" stroke="none"/>
+    <path d="M24 30.2V35"/>`,
+  nuke: `<path d="M10 20c0-6 6.3-10.5 14-10.5S38 14 38 20c0 3-2.2 5-5.5 5h-17C12.2 25 10 23 10 20z"/>
+    <path d="M20.5 25v7M27.5 25v7"/>
+    <path d="M13 32c2 7 6 10 11 10s9-3 11-10"/>`,
+  photoid: `<circle cx="31" cy="28" r="8" fill="currentColor" stroke="none"/>
+    <path d="M31 13.5v4M31 38.5v4M16.5 28h4M41.5 28h4" stroke-width="2"/>
+    <circle cx="7" cy="6" r="3.5" fill="currentColor" stroke="none"/>
+    <path d="M10.5 9.5l7 7M16 4.5l3 3" stroke-width="2"/>`,
+  annihilate: `<circle cx="10" cy="24" r="4.5" fill="currentColor" stroke="none"/>
+    <circle cx="38" cy="24" r="4.5" fill="currentColor" stroke="none"/>
+    <circle cx="24" cy="24" r="2.8" fill="currentColor" stroke="none"/>
+    <path d="M24 9v8M24 31v8M15 15l4 4M29 29l4 4M33 15l-4 4M19 29l-4 4"/>`,
+  dimension: `<path d="M24 5l13 7.5v13.5L24 33.5l-13-7.5V12.5z"/>
+    <path d="M11 12.5l13 7.5 13-7.5M24 20v13.5"/>
+    <path d="M8 41h32"/>
+    <path d="M24 34.5v3M20.5 37.5l3.5 3.5 3.5-3.5"/>`,
+
+  /* ---- 建设 ---- */
+  solar: `<circle cx="14" cy="12" r="5.5" fill="currentColor" stroke="none"/>
+    <path d="M14 2.5v3M14 18.5v3M4.5 12h3M20.5 12h3" stroke-width="2"/>
+    <rect x="9" y="28" width="30" height="14" rx="1.5"/>
+    <path d="M19 28v14M29 28v14M9 35h30"/>`,
+  fusion: `<ellipse cx="24" cy="24" rx="17" ry="10"/>
+    <ellipse cx="24" cy="24" rx="8" ry="4.5" stroke-dasharray="5 4"/>
+    <circle cx="24" cy="24" r="3.2" fill="currentColor" stroke="none"/>
+    <path d="M24 6v3M24 39v3"/>`,
+  dyson: `<circle cx="24" cy="24" r="5.5" fill="currentColor" stroke="none"/>
+    <path d="M7 15a18 18 0 0 0 0 18M41 15a18 18 0 0 1 0 18"/>
+    <path d="M15 6a20 20 0 0 1 18 0M15 42a20 20 0 0 0 18 0"/>`,
+  antimatter: `<circle cx="9" cy="24" r="4" fill="currentColor" stroke="none"/>
+    <circle cx="19" cy="24" r="4" stroke-dasharray="3 3"/>
+    <path d="M26 18h8l8 6-8 6h-8z"/>
+    <path d="M35 24h9M33 18l4-4M33 30l4 4"/>`,
+  bunker: `<circle cx="24" cy="24" r="11"/>
+    <ellipse cx="24" cy="24" rx="19.5" ry="6.5" transform="rotate(-18 24 24)"/>`,
+  ghost: `<path d="M11 22a13 13 0 0 1 26 0v17l-4.3-3.2-4.3 3.2-4.4-3.2-4.3 3.2-4.4-3.2L11 39z"/>
+    <circle cx="19" cy="21" r="2.2" fill="currentColor" stroke="none"/>
+    <circle cx="29" cy="21" r="2.2" fill="currentColor" stroke="none"/>
+    <path d="M40 14a11 11 0 0 1 0 18" stroke-dasharray="4 5"/>`,
+  lightship: `<path d="M10 24l15-8 15 8-15 8z"/>
+    <path d="M25 16v16"/>
+    <path d="M2 18h6M0 24h7M2 30h6" stroke-width="2.6"/>`,
+  listener: `<path d="M8 32a19 19 0 0 1 30-13"/>
+    <path d="M20 35l-4 7M13 42h14"/>
+    <path d="M26 19l12-7"/>
+    <circle cx="38" cy="11" r="3" fill="currentColor" stroke="none"/>`,
+};
+
+/* 包一层统一外壳；未知 key 返回空串，别在卡面上留个破图 */
+function cardArt(key) {
+  const g = CARD_GLYPHS[key];
+  if (!g) return '';
+  return `<svg class="card-art-svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g}</svg>`;
+}
+
 const UI = {
   selected: new Set(),
   targetGalaxy: null,
@@ -1471,6 +1575,7 @@ function openPlayerModal(p, v) {
     const kind = def.type === 'broadcast' ? '广播' : def.type === 'strike' ? '打击' : '建设';
     return `<div class="sm-card ${def.type}">
       <span class="dc-tag on">${kind}</span>
+      <div class="sm-art">${cardArt(c.key)}</div>
       <div class="sm-top"><span class="sm-name">${esc(def.name)}</span><span class="sm-cost">⚡${f.cost}</span></div>
       <div class="sm-facts"><span>${esc(f.main)}</span><span>${esc(f.sub)}</span></div>
       <div class="sm-desc">${esc(def.desc)}</div>
@@ -1750,7 +1855,7 @@ function renderDiscard(v) {
         style="--ring:${ring}"
         title="${esc(tip)}">
       ${tagLabel ? `<span class="dc-tag">${tagLabel}</span>` : ''}
-      <div class="dc-top"><span class="dc-name">${esc(def.short)}</span><span class="dc-cost">⚡${f.cost}</span></div>
+      <div class="dc-top"><span class="dc-name">${cardArt(d.key)}${esc(def.short)}</span><span class="dc-cost">⚡${f.cost}</span></div>
       ${d.actorName ? `<span class="dc-who">${esc(d.actorName)}</span>` : ''}
       <div class="dc-meta"><span class="dc-eff">${esc(f.main)}</span><span class="dc-sub">${esc(f.sub)}</span>${
         d.targetGalaxy != null ? `<span class="dc-dest">→ ${esc(galShort(d.targetGalaxy))}</span>` : ''}</div>
@@ -1820,6 +1925,7 @@ function openStackModal(items, zone) {
           const tag = d.tag === 'response' ? '回应' : d.tag === 'cast' ? '发布' : d.tag === 'rejected' ? '未采纳' : '';
           return `<div class="sm-card ${def.type}">
             ${tag ? `<span class="dc-tag on">${tag}</span>` : ''}
+            <div class="sm-art">${cardArt(d.key)}</div>
             <div class="sm-top"><span class="sm-name">${esc(def.name)}</span><span class="sm-cost">⚡${f.cost}</span></div>
             <div class="sm-facts"><span>${esc(f.main)}</span><span>${esc(f.sub)}</span>${
               d.targetGalaxy != null ? `<span class="sm-dest">目标 ${esc(galLabel(d.targetGalaxy))}</span>` : ''}</div>
@@ -1850,7 +1956,7 @@ function renderHand(v) {
     // 点开看详情：完整说明 + 拆除（返还一半建造费）
     return `<button type="button" class="eq ${def.type}" data-build="${c.uid}"
         title="${esc(def.name)} · 点击查看详情 / 拆除">
-      <b>${esc(def.short)}</b><i>${esc(f.main)}</i></button>`;
+      <b>${cardArt(c.key)}${esc(def.short)}</b><i>${esc(f.main)}</i></button>`;
   }).join('');
   /* 我发射出去、还在飞的打击：摆在自己名字旁边，随时可撤回。
      刻意不放在"我的回合"才出现的地方——撤回不限时间，别人思考时也该能点。 */
@@ -1912,15 +2018,14 @@ function renderHand(v) {
     const sel = UI.selected.has(c.uid);
     const reserved = !!def.escape;   // 光速飞船：留着保命，不能主动打出
     const typeLabel = reserved ? '应急' : def.type === 'broadcast' ? '广播' : def.type === 'strike' ? '打击' : '建设';
-    const glyph = def.type === 'broadcast' ? '广' : def.type === 'strike' ? '击' : '建';
     // 只给"这一帧才出现的状态"打标记，重绘不会把动画重播一遍
     const fresh = !seen.has(c.uid);
     const fx = fresh ? ' deal' : (sel && !prevSel.has(c.uid) ? ' rise' : (!sel && prevSel.has(c.uid) ? ' fall' : ''));
     return `<div class="pcard ${def.type}${sel ? ' selected' : ''}${me.energy >= def.cost ? '' : ' poor'}${reserved ? ' reserved' : ''}${fx}"
         data-uid="${c.uid}" title="${esc(def.name)}｜⚡${def.cost}｜${esc(f.main)}｜${esc(f.sub)}｜${esc(def.desc)}"
         style="z-index:${i + 1};--d:${i}">
-      <span class="pc-glyph">${glyph}</span>
       <div class="pc-top"><span class="pc-cost">⚡${def.cost}</span><span class="pc-type">${typeLabel}</span></div>
+      <div class="pc-art">${cardArt(c.key)}</div>
       <div class="pc-name">${esc(def.name)}</div>
       <div class="pc-facts">
         <span class="pc-main">${esc(f.main)}</span>

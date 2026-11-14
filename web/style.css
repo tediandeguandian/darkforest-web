@@ -908,13 +908,13 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
 /* ---- 手牌 ---- */
 .hand{
   display:flex;gap:8px;align-items:flex-end;
-  overflow-x:auto;overflow-y:visible;padding:6px 2px 2px;min-height:118px;
+  overflow-x:auto;overflow-y:visible;padding:6px 2px 2px;min-height:130px;
   scrollbar-width:thin;
 }
 .hand::-webkit-scrollbar{height:4px}
 .hand::-webkit-scrollbar-thumb{background:rgba(152,175,208,.18);border-radius:4px}
 .pcard{
-  position:relative;flex:0 0 auto;width:96px;height:130px;
+  position:relative;flex:0 0 auto;width:96px;height:142px;
   display:flex;flex-direction:column;gap:2px;
   padding:9px 9px 8px;border-radius:var(--r-m);cursor:pointer;
   background:linear-gradient(168deg,var(--cardface) 0%,var(--cardface-2) 100%);
@@ -946,10 +946,24 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
 .pcard.poor{opacity:.5}
 .pcard.poor .pc-cost{color:var(--red)}
 .pcard.reserved{border-style:dashed;border-color:rgba(102,204,217,.32)}
-.pc-glyph{
-  position:absolute;right:7px;top:26px;
-  font-size:34px;line-height:1;font-weight:700;
-  color:#fff;opacity:.045;pointer-events:none;letter-spacing:0;
+/* 卡面矢量图：颜色跟卡片类型走（--kind），尺寸由容器决定 */
+.card-art-svg{display:block;width:100%;height:100%;overflow:visible}
+.pc-art{
+  width:32px;height:32px;flex:0 0 auto;align-self:center;margin:2px 0 0;
+  color:var(--kind,var(--txt));
+}
+.pc-art .card-art-svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+.sm-art{
+  width:34px;height:34px;flex:0 0 auto;align-self:flex-start;margin:0 0 2px;
+  color:var(--kind,var(--txt));
+}
+.dc-name .card-art-svg{
+  display:inline-block;width:10px;height:10px;vertical-align:-1px;
+  margin-right:2px;color:var(--kind,var(--dim));opacity:.9;
+}
+.eq .card-art-svg{
+  display:inline-block;width:12px;height:12px;vertical-align:-2px;
+  margin-right:3px;opacity:.85;
 }
 .pc-top{display:flex;align-items:center;justify-content:space-between;gap:4px}
 .pc-cost{
@@ -1016,6 +1030,9 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   color:var(--dim);cursor:pointer;
   transition:border-color var(--dur-2) var(--ease),background var(--dur-2) var(--ease),transform var(--dur-2) var(--ease);
 }
+.dchip.build{--kind:#63bf90}
+.dchip.broadcast{--kind:#66ccd9}
+.dchip.strike{--kind:#ec6a5f}
 .dchip:hover{background:rgba(20,27,41,.9);border-color:var(--line-hi)}
 .dc-top{display:flex;align-items:baseline;justify-content:space-between;gap:4px}
 .dc-name{
@@ -1310,11 +1327,11 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   padding:12px 12px 11px;border-radius:var(--r-m);min-height:150px;
   background:linear-gradient(168deg,var(--cardface),var(--cardface-2));
   border:1px solid rgba(152,175,208,.16);
-  border-top:2px solid #63bf90;
+  --kind:#63bf90;border-top:2px solid var(--kind);
   box-shadow:0 8px 20px -14px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.04);
 }
-.sm-card.broadcast{border-top-color:#66ccd9}
-.sm-card.strike{border-top-color:#ec6a5f}
+.sm-card.broadcast{--kind:#66ccd9;border-top-color:var(--kind)}
+.sm-card.strike{--kind:#ec6a5f;border-top-color:var(--kind)}
 .sm-top{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
 .sm-name{font-size:13px;font-weight:600;line-height:1.3;color:var(--txt)}
 .sm-cost{flex:0 0 auto;font-family:ui-monospace,monospace;font-size:11.5px;font-weight:700;color:var(--gold)}
@@ -1511,7 +1528,7 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
 @media (max-width:1280px){
   .board{grid-template-columns:minmax(0,168px) minmax(0,1fr) minmax(0,168px);gap:8px}
   .tray{flex-basis:246px}
-  .pcard{width:88px;height:122px}
+  .pcard{width:88px;height:134px}
 }
 @media (max-width:1120px){
   .board{grid-template-columns:minmax(0,152px) minmax(0,1fr) minmax(0,152px)}
@@ -1549,8 +1566,8 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   .tray-row.last{flex:1 1 auto}
   .dlist{max-height:none}
   .mybar{padding:8px 10px calc(10px + env(safe-area-inset-bottom,0px));gap:6px}
-  .hand{min-height:126px;padding:8px 2px 2px}
-  .pcard{width:86px;height:120px}
+  .hand{min-height:138px;padding:8px 2px 2px}
+  .pcard{width:86px;height:132px}
   .pcard:hover{transform:none}
   .pcard.selected{transform:translateY(-8px)}
   .action-bar{min-height:0;gap:7px}
@@ -1610,9 +1627,9 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   }
   .dlist > .dim{flex:0 0 150px;min-height:64px;flex-direction:row}
   .dchip{flex:0 0 auto}
-  .pcard{width:80px;height:112px;padding:8px}
+  .pcard{width:80px;height:124px;padding:8px}
   .pc-name{font-size:11.5px}
-  .pc-glyph{font-size:28px;top:22px;right:6px}
+  .pc-art{width:26px;height:26px;margin-top:0}
   .dchip{width:100px;min-width:100px;height:64px}
   .dstack.multi > .dchip.spine{height:64px}
   .tray-label{flex-basis:28px;font-size:8px}
@@ -1645,8 +1662,8 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   .hud{height:46px}
   .mybar{padding:7px 12px 9px;gap:6px}
   .hand{min-height:106px}
-  .pcard{width:82px;height:112px}
-  .pc-glyph{font-size:28px;top:22px}
+  .pcard{width:82px;height:124px}
+  .pc-art{width:24px;height:24px;margin-top:0}
   .pc-name{font-size:11.5px}
   .tray{flex-basis:240px}
   .dchip{height:64px}

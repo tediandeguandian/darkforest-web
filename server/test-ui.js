@@ -48,6 +48,8 @@ w.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
   window.__setConnHint = setConnHint;
   window.__stashHandoff = stashHandoff;
   window.__syncAIFoldWide = syncAIFoldWide;
+  window.__cardArt = cardArt;
+  window.__CARD_GLYPHS = CARD_GLYPHS;
 `);
 
 function show(view, pid) {
@@ -1206,6 +1208,59 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     w.eval(`delete window.matchMedia;`);
   }
 
-  console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
+  console.log('=== UI 28. 每张卡牌都有自己的矢量图 ===');
+/* 「符合名称」是个可以回归的约束：22 个 key 一个不能少，且两两不同。
+   曾经手牌只用一个汉字水印（广/击/建），按类型共用，看不出是哪张牌。 */
+const allKeys = Object.keys(w.CARD_DEFS);
+const missArt = allKeys.filter(k => !w.__CARD_GLYPHS[k]);
+ok(missArt.length === 0, '每个卡牌 key 都要有图标，缺：' + missArt.join(','));
+const artList = allKeys.map(k => w.__CARD_GLYPHS[k]);
+ok(new Set(artList).size === allKeys.length,
+  `图标应两两不同（当前 ${new Set(artList).size}/${allKeys.length} 个不重复）`);
+ok(artList.every(a => /<(path|circle|rect|ellipse|line)\b/.test(a || '')), '每个图标都要有实际图形，不能是空串');
+
+const shell28 = w.__cardArt('solar');
+ok(shell28.indexOf('<svg') === 0 && shell28.indexOf('class="card-art-svg"') > 0, 'cardArt 应返回统一样式的 svg');
+ok(shell28.indexOf('viewBox="0 0 48 48"') > 0, '图标统一 48×48 画布');
+ok(w.__cardArt('__not_a_card__') === '', '未知 key 返回空串，不在卡面留破图');
+
+/* 手牌：三张不同的牌 → 三张不同的图 */
+const g28 = createGame(['A', 'B'], { strikeTarget: 'hidden' });
+const S28 = g28.state();
+S28.players[0].galaxy = 1; S28.players[1].galaxy = 5;
+S28.players[0].hand = [{ uid: 'a1', key: 'solar' }, { uid: 'a2', key: 'nuke' }, { uid: 'a3', key: 'cosmic_coop' }];
+S28.currentIdx = 0; S28.step = 'action';
+show(viewFor(g28, 'p0'), 'p0');
+const pcs28 = [...w.document.querySelectorAll('.pcard')];
+ok(pcs28.length === 3, '手牌应有三张');
+ok(pcs28.every(c => !!c.querySelector('.pc-art svg')), '每张手牌都要有卡面插画');
+const artOf28 = c => c.querySelector('.pc-art svg').innerHTML;
+ok(new Set(pcs28.map(artOf28)).size === 3, '三张不同的牌应画出三张不同的图');
+
+/* 建设区标签 / 弃牌筹码 / 详情卡也都带图 */
+S28.players[0].buildZone = [{ uid: 'b1', key: 'dyson' }];
+show(viewFor(g28, 'p0'), 'p0');
+ok(!!w.document.querySelector('.eq svg'), '建设区标签要带小图标');
+ok(!w.document.querySelector('.pc-art').textContent.trim(), '插画是纯矢量，不该再残留汉字水印');
+
+const g28c = createGame(['A', 'B'], { strikeTarget: 'hidden' });
+const S28c = g28c.state();
+S28c.players[0].galaxy = 1; S28c.players[1].galaxy = 4;
+S28c.players[0].energy = 20;
+S28c.players[1].buildZone = [{ uid: 'z1', key: 'solar' }];
+// 用科技锁死而不是光粒：前者 immediate，结算完立刻进弃牌堆；后者还在飞，堆里是空的
+S28c.players[0].hand = [{ uid: 'c1', key: 'lock' }];
+S28c.currentIdx = 0; S28c.step = 'action';
+g28c.playStrike('p0', 'c1', 4);
+show(viewFor(g28c, 'p1'), 'p1');
+ok(!!w.document.querySelector('.dchip .dc-name svg'), '弃牌筹码要在名称前带小图标');
+const ds28 = w.document.querySelector('.dstack');
+if (ds28) ds28.click();
+const sm28 = w.document.querySelector('#stackModal .sm-art svg');
+ok(!!sm28, '弃牌摞展开的详情卡要带图标');
+const modal28 = w.document.getElementById('stackModal');
+if (modal28) modal28.remove();
+
+console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();
