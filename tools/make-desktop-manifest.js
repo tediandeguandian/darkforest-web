@@ -35,15 +35,17 @@ const sizeOf = f => {
 };
 
 /* 一个平台条目：本地有文件就用本地短链，否则退回 Release 直链；
-   两样都没有返回 null（调用方跳过这一项）。 */
-function entry({ os, file, githubFile, label, tail }) {
+   两样都没有返回 null（调用方跳过这一项）。
+   saveAs 是「另存为」时显示的文件名，必须与其它条目互不相同——
+   轻量版和完整版同叫 win64-setup.exe 时，用户连下两个会得到一个 (1).exe，分不清谁是谁。 */
+function entry({ os, file, githubFile, label, tail, saveAs }) {
   const bytes = sizeOf(file);
   if (bytes) {
     return {
       os, label,
       sub: `v${VER} · ${mb(bytes)} · ${tail}`,
       url: `/download/${file}`,
-      file: os === 'mac' ? `黑暗森林-v${VER}-macos.dmg` : `黑暗森林-v${VER}-win64-setup.exe`,
+      file: saveAs,
       bytes,
     };
   }
@@ -63,16 +65,19 @@ const mac = entry({
   os: 'mac', file: MAC_FILE, githubFile: MAC_FILE,
   label: '下载 macOS 版',
   tail: '通用二进制（Intel / Apple 芯片）',
+  saveAs: `黑暗森林-v${VER}-macos-universal.dmg`,
 });
 const winLite = entry({
   os: 'win', file: WIN_LITE, githubFile: WIN_LITE,
   label: '下载 Windows 版（轻量）',
   tail: '需 WebView2（缺失时自动装）',
+  saveAs: `黑暗森林-v${VER}-windows-轻量.exe`,
 });
 const winFull = entry({
   os: 'win', file: WIN_FULL, githubFile: WIN_FULL,
   label: '下载 Windows 版（完整）',
   tail: '零依赖，自带浏览器内核',
+  saveAs: `黑暗森林-v${VER}-windows-完整.exe`,
 });
 
 const items = [mac, winLite, winFull].filter(Boolean);
