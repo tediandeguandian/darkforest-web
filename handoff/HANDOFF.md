@@ -2,9 +2,10 @@
 
 > 给下一个接手的 AI 或人类开发者。读完这一份，你应该能在 10 分钟内跑起来、30 分钟内改第一个需求。
 >
-> 项目版本：**v1.0.19**（2026-10-24）
+> 项目版本：**v1.0.30**（2026-11-14）
 > 线上：<https://darkforest.dpdns.org>（Cloudflare Worker `dark-forest` + Durable Object）
-> APK：`黑暗森林-v1.0.14.apk`（644 KB，versionCode 20，含 5 档图标 + 自适应图标 + 两张背景）
+> 安装包：macOS dmg / Windows 轻量 + 完整 exe / `dark-forest.apk`（versionCode 37），
+> 全部由 `.github/workflows/release.yml` 在打 tag 时产出，**发版看第 7 节「发版一条命令」**
 
 ---
 
@@ -232,13 +233,15 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 下载入口聚合 | 入口页只画一个「下载客户端」按钮，平台选项在应用内弹层里 | 三行下载条会把入口页撑出屏幕（用户反馈过） |
 | CI 挂 Release 用 `gh release upload` | **不要**用 `softprops/action-gh-release` | 它会用自己的 body 覆盖 release 正文，把发版时写好的"本版改动"冲掉（v1.0.17/18 就被冲掉了，已补回） |
 | 换人提示时长 | `renderGame` 的 `UI.gate` 3 秒（`until` 与 `gateTimer` 两处都要改，只改一个会出现「按钮亮了但遮罩还在」或反过来） | 3 秒是「看清局势」和「别墨迹」的折中；曾经是 5 秒 |\n| 光速飞船可弃置 | `renderHand` 的点牌回调对 `def.escape` 只挡「出」不挡「选」——选中后「出牌」按钮恒灰（`canPlay` 里 `!selDef.escape`），「弃置」照常可用 | 留着保命是默认选择，不是强制；想换牌不该被拦住。曾经的 bug：回调直接 toast + return，连选都选不了 |\n| 联机人机思考时间 | 最少 3 秒、区间 3–10 秒。**wrangler.toml 的 `[vars]` 会覆盖代码默认值**，改线上必须两处一起改（`worker/src/index.js` + `wrangler.toml`）；本地 Node 服在 `server/server.js`；单机在 `web/js/local.js`（2.2–4.2 秒，故意比线上短） |\n| 「谁出的牌」提示 | 宽屏：从座位卡画一条贝塞尔曲线到弃牌块（`.arrow-layer`，fixed 全屏 SVG）；**窄屏（≤1100px）不画**，改在牌块上显示 `.dc-who` 出牌人名 | 窄屏布局是上下堆叠的，跨屏线会盖住星图与提示文字。归属信息由 `view.js` 的 `discardEntry.actor/actorName` 提供（本来就是公开信息） |
-| CI 自动挂 Release | `softprops/action-gh-release@v2` 需要 `permissions: contents: write`，否则静默失败（被 continue-on-error 吞掉） | tag 由 Release 创建触发 CI，产物会自动挂到对应 Release；v1.0.16 因缺权限没挂上，手动补传 |
-| 广播不泄露坐标 | 战报/事件里广播**只给射程**（`radius`），不给实际距离（`distance` 这个字段在广播事件里根本不存在） | 目标星系是公开的，实际距离一公开，发布者坐标就公开了。AI 那边同样只准用 `radius`——用它反推位置才和人眼看到的一样多 |
+| reusable workflow 不继承 secrets | 被 `uses: ./.github/workflows/build-*.yml` 调起来的 job，要用 `CLOUDFLARE_API_TOKEN` 这类东西必须显式写 `secrets: inherit`，否则拿到的全是空值 | 表现得像"上传成功但链接 404"，其实是没权限。1.0.30 的 release.yml 三个调用点都写了 |
+| CI 挂 Release 的权限 | 各 build workflow 用 `gh release upload`，需要 job 级 `permissions: contents: write`；上传前先 `gh release view` 确认 Release 已由 prepare job 建好 | `softprops/action-gh-release` 会用自己的 body 覆盖正文（见上一条），别用。v1.0.16 曾因缺权限静默失败，手动补传 |
+| 广播完全不泄露档位 | **1.0.30 起**战报 / 事件 / 弹窗一律只写「广播」，`family` 与 `radius` 都不再下发（`shared/view.js` 的 `visibleEvents` 兜底再删一次，旧存档与 open 模式也不会漏）；牌背图标统一成「牌背 + 问号」，看不出是恒星 / 宇宙 / 超距 | 档位连图标一起暴露，等于把射程画在牌背上（早先三张 hidden 图标各画 1/2/3 格信号，就是这么漏的）。AI 曾按 `radius` 剪枝候选，现在 `shared/ai.js` 的 `broadcast_cast` 直接跳过。**1.0.29 及更早只藏了 `distance`、给了 `radius`，别照着旧版改回去** |
 | Worker 自定义域名 | `worker/wrangler.toml` 的 routes 两个都要挂：darkforest（新）+ shuwang（旧，用户在其 Cloudflare 侧配了 301 → 新域名） | ⚠️ **删掉旧域名那条 custom domain，Cloudflare 会把它的 DNS 记录一起删掉**，域名直接不解析，用户配的重定向规则也会失效。两条一起挂着，规则优先级更高（301 生效），互不干扰 |
 | 桌面版下载入口 | 入口页读 `web/download/desktop.json`。**轻量版（1.5 MB）放本站 `/download/` 直链**，完整版跳 GitHub Release；`tools/publish-github.sh <仓库> <PAT> <说明> <Tauri安装包>` 第 4 个参数给了安装包就自动拷进 `web/download/` 并改成本站直链，不给就退回外链 | 105 MB 不能走 Worker 静态资源（免费额度 100 MB/文件）；1.5 MB 随便放。UI 按 URL 是不是 `http(s)://` 开头自动切换：本站直链加 `download` 属性、箭头 ↓；外链 `target=_blank`、箭头 ↗ |
 | 域名迁移 | 1.0.14 起 `DF_SERVER` 全部指向 **darkforest.dpdns.org**；`shuwang.dpdns.org` 仍挂在同一个 Worker 上（老安装包里烙的是旧地址，删了它们就没法更新），两个自定义域名都写在 `worker/wrangler.toml` 的 routes 里 |
 | 更新弹窗的「新功能」来自 apk.json | `notes` 是目标版本的清单，`history` 是全部版本；前端按「本机版本 < v ≤ 目标版本」聚合，老版本用户一次看到这一跳跨过的全部改动。都来自 `apk/release-notes.json` | 每次发版在 `apk/release-notes.json` 加一条，键名必须和 manifest 的 versionName 一模一样；**永远只有一个整包，不做逐版本递进** |
-| 下载入口靠约定 | 前端只看 `/download/apk.json` 在不在；重装环境忘了跑 `apk/build.sh` 就不会出现入口 | 发版流程：先 `apk/build.sh`（顺带同步 web/download），再 `worker` 部署 |
+| 发版一条命令 | **1.0.30 起**：把版本号在三处改成一致（`desktop/package.json`、`desktop-tauri/src-tauri/tauri.conf.json`、`apk/AndroidManifest.xml` 的 versionName + versionCode），在 `apk/release-notes.json` 加一条同版本的说明，然后 `git tag v1.0.30 && git push origin v1.0.30`。`.github/workflows/release.yml` 会校验三处版本一致 → 建 Release（正文由 `tools/release-notes.js` 从 release-notes.json 生成）→ 并行跑 mac / win / apk 三个 reusable workflow → 收产物、回填 `web/download/`、重算清单、`wrangler deploy`、线上复验 | 以前是本地 `apk/build.sh` + `publish-github.sh` + `wrangler deploy` 手工三步，漏一步就是死链。**tag 必须与三处版本号一致**，prepare job 会直接拒掉不一致的 tag |
+| push main 会自动部署 | `.github/workflows/deploy-worker.yml`：动到 `web/ shared/ worker/ tools/` 就部署，`concurrency: worker-deploy` 防并发打架 | 只改 `handoff/` 或文档不会触发；部署前会跑 `tools/fetch-release-assets.sh` 按当前版本号回填安装包 |
 
 ---
 
@@ -263,7 +266,8 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 2. handoff/对话-用户需求全记录.md —— 57 条原始需求，按时间顺序
 3. 三体黑暗森林桌游-网页化设计与AI方案.md —— 完整设计文档，规则看第二章，踩坑看第六章
 
-然后跑一遍 node server/test-server.js 确认 228 项通过，再开始干活。
+然后跑一遍测试确认基线：node server/test-server.js（416 项）、node server/test-ui.js（357 项）、
+node server/test-net.js（29 项）、node worker/test-do.mjs（44 项），全绿再开始干活。
 
 三条红线：所有下发必须走 shared/view.js 的 viewFor；规则只在 shared/ 里改；
 "等玩家决定"的挂起状态必须防重入、必须能在对局结束时清掉。
