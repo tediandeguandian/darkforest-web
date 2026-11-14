@@ -35,14 +35,23 @@ const Net = (() => {
     return DF_SERVER ? DF_SERVER + path : path;
   }
 
+  /* 会话 token 随 URL 一起送：WebSocket 不能自定义请求头，而 Worker 那边
+     会在升级前用 ?auth= 校验会话（Authorization 头在 ws 握手时不保证送达）。
+     单机页 / 局域网页没有 Auth 模块，这里自然是空串。 */
+  function authQuery() {
+    const t = (typeof Auth !== 'undefined' && Auth.token) ? Auth.token : '';
+    return t ? '&auth=' + encodeURIComponent(t) : '';
+  }
+
   function wsUrl(roomId) {
+    const q = `?room=${encodeURIComponent(roomId)}${authQuery()}`;
     if (DF_SERVER) {
       const u = new URL(DF_SERVER);
       const proto = u.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${proto}//${u.host}/ws?room=${encodeURIComponent(roomId)}`;
+      return `${proto}//${u.host}/ws${q}`;
     }
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${proto}//${location.host}/ws?room=${encodeURIComponent(roomId)}`;
+    return `${proto}//${location.host}/ws${q}`;
   }
 
   /* 关闭旧连接 / 判断"这次 close 还算不算我们的"
@@ -114,6 +123,13 @@ const Net = (() => {
         case 'state':
           state.view = m.view;
           emit('state', m.view);
+          break;
+        case 'unseat':
+          /* 座位已经交出去了：本地那条 token 立刻作废。
+             不删的话刷新页面会拿它去"重连"，而席位其实已经不存在。 */
+          LS.del('df_token');
+          LS.del('df_room');
+          state.me = null;
           break;
         case 'error':
           emit('error', m.msg);
@@ -201,6 +217,13 @@ const Net = (() => {
     },
 
     start() { this.send({ t: 'start' }); },
+
+    /** 座位 → 观战席（仅开局前）。服务端会同时发回 joined(spectator) 与 unseat */
+    toSpectator() { this.send({ t: 'spectate' }); },
+    /** 观战席 → 座位（仅开局前、且房间没满） */
+    sit() { this.send({ t: 'sit' }); },
+    /** 转让房主：服务端只接受真人玩家 */
+    transferHost(playerId) { this.send({ t: 'transferHost', playerId }); },
     act(action) { this.send({ t: 'act', action }); },
     addAI(level) { this.send({ t: 'addAI', level }); },
     removeAI(playerId) { this.send({ t: 'removeAI', playerId }); },

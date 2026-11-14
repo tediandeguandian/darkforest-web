@@ -9,10 +9,15 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const { Room, getRoom, rooms } = require('./room.js');
+const auth = require('./auth.js');
 const { viewFor } = require('../shared/view.js');
 const { runAI } = require('../shared/ai.js');
 
 const PORT = process.env.PORT || 8080;
+/* 本地开发默认不强制登录：局域网里随手一局不该先注册账号。
+   想验证线上的强制登录行为，用 AUTH_REQUIRED=1 启动。
+   云端那个 Worker 是永远强制的，没有开关。 */
+const AUTH_REQUIRED = process.env.AUTH_REQUIRED === '1';
 const ROOT = path.resolve(__dirname, '..');
 
 const MIME = {
@@ -25,8 +30,27 @@ const MIME = {
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
+
+const jsonOut = (res, status, obj) => {
+  res.writeHead(status, { ...CORS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(obj));
+};
+
+const bearer = req => {
+  const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization || '');
+  return m ? m[1].trim() : '';
+};
+
+function readJson(req, cb) {
+  let raw = '';
+  req.on('data', d => {
+    raw += d;
+    if (raw.length > 1e6) { req.destroy(); }   // 别让一个超大 body 把进程吃了
+  });
+  req.on('end', () => { try { cb(JSON.parse(raw || '{}')); } catch (e) { cb({}); } });
+}
 
 const server = http.createServer((req, res) => {
   let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
@@ -36,6 +60,23 @@ const server = http.createServer((req, res) => {
 
   // 本地调试时允许 APK（file:// 页面）跨域建房
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
+
+  /* 账号接口：与云端 Worker 完全同形，前端不用分叉 */
+  if (urlPath === '/api/auth/me') {
+    const r = auth.session({ token: bearer(req) });
+    return jsonOut(res, 200, { authRequired: AUTH_REQUIRED, user: r.ok ? r.user : null });
+  }
+  if (urlPath.startsWith('/api/auth/')) {
+    const op = urlPath.slice('/api/auth/'.length);
+    /* 前端用更自然的 /api/auth/email/*，内部只认短名——与 Worker 那边同一张表，
+       两处不一致就会出现「注册能过、绑定邮箱说未知操作」。 */
+    const AUTH_OP = { 'email/code': 'code', 'email/bind': 'bind' };
+    return readJson(req, body => {
+      const token = bearer(req) || body.token || '';
+      const [status, out] = auth.handle(AUTH_OP[op] || op, Object.assign({}, body, { token }));
+      jsonOut(res, status, out);
+    });
+  }
 
   // 建房接口
   if (urlPath === '/api/create') {
@@ -63,7 +104,20 @@ function notFound(res) {
 }
 
 /* ---------- WebSocket ---------- */
-const wss = new WebSocketServer({ server, path: '/ws' });
+const wss = new WebSocketServer({
+  server,
+  path: '/ws',
+  /* 账号闸门放在升级之前：拒绝时直接回 401，客户端不会先连上再被踢
+     （先连上再踢会让前端的自动重连一直循环）。 */
+  verifyClient(info, cb) {
+    const u = new URL(info.req.url, 'http://localhost');
+    const q = u.searchParams.get('auth') || '';
+    const sReq = q ? auth.session({ token: q }) : { ok: false };
+    info.req.dfUser = sReq.ok ? sReq.user.username : '';
+    if (!AUTH_REQUIRED) return cb(true);
+    return cb(!!sReq.ok, sReq.ok ? 200 : 401, sReq.ok ? 'OK' : '请先登录');
+  },
+});
 
 function send(ws, obj) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
@@ -79,11 +133,11 @@ function pushState(room) {
     }
   }
   // 观战者：playerId 传 null，拿到的是没有「我」的公开视图
-  for (const ws of room.watchers) {
-    if (ws.readyState === 1) {
+  for (const w of room.watchers) {
+    if (w.ws && w.ws.readyState === 1) {
       const v = viewFor(room.game, null);
       if (v) v.thinking = !!room.thinking;
-      send(ws, { t: 'state', view: v });
+      send(w.ws, { t: 'state', view: v });
     }
   }
 }
@@ -135,8 +189,8 @@ function pushLobby(room) {
       send(seat.ws, { t: 'lobby', room: room.summary(), you: seat.playerId });
     }
   }
-  for (const ws of room.watchers) {
-    if (ws.readyState === 1) send(ws, { t: 'lobby', room: room.summary() });
+  for (const w of room.watchers) {
+    if (w.ws && w.ws.readyState === 1) send(w.ws, { t: 'lobby', room: room.summary() });
   }
 }
 
@@ -181,11 +235,11 @@ wss.on('connection', (ws, req) => {
 
       /* 观战：只读连接。不占席位、不发 token，也不会被当成某个玩家的重连 */
       if (m.spectate) {
-        room.addWatcher(ws);
-        session = { roomId: room.id, spectator: true };
+        const w = room.addWatcher(ws, url.searchParams.get('user') || m.name);
+        session = { roomId: room.id, spectator: true, wid: w.wid };
         ws.roomId = room.id;
         ws.spectator = true;
-        send(ws, { t: 'joined', roomId: room.id, spectator: true });
+        send(ws, { t: 'joined', roomId: room.id, spectator: true, wid: w.wid });
         if (room.started && room.game) {
           send(ws, { t: 'state', view: viewFor(room.game, null) });
           driveAI(room);   // 幂等：若正卡在人机回合，这里会推进
@@ -193,7 +247,8 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
-      const r = m.token ? room.rejoin(m.token, ws) : room.join(m.name, ws);
+      /* 登录用户的席位名以账号为准：客户端自报的 name 不作数，否则可以随便冒充 */
+      const r = m.token ? room.rejoin(m.token, ws) : room.join(req.dfUser || m.name, ws);
       if (r.error) return send(ws, { t: 'error', msg: r.error });
 
       session = { roomId: room.id, playerId: r.playerId };
@@ -218,6 +273,20 @@ wss.on('connection', (ws, req) => {
     if (session.spectator) {
       if (m.t === 'ping') return send(ws, { t: 'pong', ts: Date.now() });
       if (m.t === 'leave') { room.removeWatcher(ws); session = null; return; }
+      /* 入座：从观战席坐回玩家席（仅开局前，房间没满） */
+      if (m.t === 'sit') {
+        const r = room.sitDown(session.wid, ws);
+        if (r.error) return send(ws, { t: 'error', msg: r.error });
+        session = { roomId: room.id, playerId: r.playerId };
+        ws.playerId = r.playerId;
+        ws.spectator = false;
+        send(ws, {
+          t: 'joined', roomId: room.id, playerId: r.playerId,
+          token: r.token, seat: r.seat,
+        });
+        pushLobby(room);
+        return;
+      }
       return send(ws, { t: 'error', msg: '观战中不能操作' });
     }
 
@@ -228,6 +297,26 @@ wss.on('connection', (ws, req) => {
       if (r.error) return send(ws, { t: 'error', msg: r.error });
       pushState(room);
       driveAI(room);
+      return;
+    }
+
+    if (m.t === 'spectate') {
+      const r = room.toSpectator(playerId, ws);
+      if (r.error) return send(ws, { t: 'error', msg: r.error });
+      session = { roomId: room.id, spectator: true, wid: r.wid };
+      ws.spectator = true;
+      ws.playerId = null;
+      send(ws, { t: 'joined', roomId: room.id, spectator: true, wid: r.wid });
+      // 席位上的 token 作废，前端要把它删掉；否则刷新页面会被当成"重连到不存在的席位"
+      send(ws, { t: 'unseat' });
+      pushLobby(room);
+      return;
+    }
+
+    if (m.t === 'transferHost') {
+      const r = room.transferHost(playerId, m.playerId);
+      if (r.error) return send(ws, { t: 'error', msg: r.error });
+      pushLobby(room);
       return;
     }
 

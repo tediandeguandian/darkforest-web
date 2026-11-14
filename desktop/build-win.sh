@@ -19,7 +19,7 @@ rm -rf www build release   # release 是 electron-builder 的输出目录，不�
 mkdir -p www/js www/shared www/img build
 cp "$ROOT/web/style.css" www/
 cp "$ROOT/web/img/"*.jpg www/img/
-cp "$ROOT/web/js/ui.js" "$ROOT/web/js/local.js" "$ROOT/web/js/net.js" www/js/
+cp "$ROOT/web/js/ui.js" "$ROOT/web/js/local.js" "$ROOT/web/js/net.js" "$ROOT/web/js/auth.js" www/js/
 [ -f "$ROOT/web/js/net-lan.js" ] && cp "$ROOT/web/js/net-lan.js" www/js/
 cp "$ROOT/shared/cards.js" "$ROOT/shared/rules.js" "$ROOT/shared/ai.js" "$ROOT/shared/view.js" www/shared/
 cp "$ROOT/apk/icon/icon-512.png" www/icon.png

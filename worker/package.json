@@ -9,7 +9,7 @@
     "build": "sh build.sh",
     "dev": "sh build.sh && wrangler dev",
     "deploy": "sh build.sh && wrangler deploy",
-    "test": "sh build.sh && mkdir -p .test && npx esbuild src/index.js --bundle --format=esm --outfile=.test/bundle.mjs && node test-do.mjs"
+    "test": "sh build.sh && mkdir -p .test && npx esbuild src/index.js --bundle --format=esm --external:cloudflare:sockets --outfile=.test/bundle.mjs && node test-do.mjs && node test-users.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",

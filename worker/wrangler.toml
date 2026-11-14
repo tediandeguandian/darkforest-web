@@ -27,9 +27,20 @@ command = "sh build.sh"
 name = "ROOMS"
 class_name = "Room"
 
+# 账号表：一个单实例 DO（idFromName("global")）。
+# 为什么不按用户名分片：注册要判重名，分片后就得跨实例查，反而要加全局索引。
+[[durable_objects.bindings]]
+name = "USERS"
+class_name = "Users"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+# v1 不能删——Room 的数据依赖它。v2 只新增 Users，不改 Room。
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Users"]
 
 # ── 可选：KV 只做索引/战绩，不存对局状态 ──
 # 创建：npx wrangler kv namespace create META

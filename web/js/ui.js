@@ -312,12 +312,39 @@ function writeName(n) {
   try { Net.setName(n); } catch (e) {}
 }
 
+/**
+ * 联机闸门：没登录就先弹面板，登录成功后再把刚才的动作续上。
+ * 服务端不要求登录（本地 / 局域网）时直接放行，游客照样能开局。
+ *
+ * 为什么不用一个 async 函数包住整个点击处理：那样每个按钮都要 await，
+ * 连"本地单机开局"也会被推迟一个微任务——测试里点完按钮立刻读 localStorage
+ * 就什么都读不到。这里给一条同步快路径，只有真要登录时才走异步。
+ */
+function gateOpen() {
+  if (typeof Auth === 'undefined') return true;        // 单机页 / 局域网页
+  if (Auth.known && !Auth.required) return true;       // 服务端不要求登录
+  return !!(Auth.user && Auth.token);                  // 已登录
+}
+
+/** 需要登录时调用：弹面板，登录成功后自动重放这次点击 */
+function gateHold(resume) {
+  try {
+    Auth.requireLogin(() => { try { resume(); } catch (e) {} });
+  } catch (e) {}
+}
+
 function renderEntry() {
   clearOverlays();          // 从牌桌退回来时别把上一局的弹窗/换人提示留在屏上
   const saved = readName();
   const offline = !!Net.local;
   const canLan = !!Net.canLan;
   const lanUrl = canLan ? Net.lanUrl() : null;
+  /* 账号模块只在联机页加载；单机页 / 局域网页没有它 */
+  const hasAuth = typeof Auth !== 'undefined';
+  const acc = hasAuth ? Auth.user : null;
+  /* 登录后名字就是账号名：本地再留一份，切到单机页也是同一个名字 */
+  if (acc && saved !== acc.username) writeName(acc.username);
+  const nameVal = acc ? acc.username : saved;
 
   $('#app').innerHTML = `
     <div class="lobby lobby-entry">
@@ -325,8 +352,13 @@ function renderEntry() {
       <h1>三体 · 黑暗森林</h1>
       <p class="sub">${offline ? '单人对局 · 四档对手都在本机' : '2–9 人 · 藏好自己，做好清理'}</p>
       <div class="field">
-        <label>你的名字</label>
-        <input id="myname" maxlength="12" placeholder="输入名字" value="${esc(saved)}" />
+        <label>你的名字${acc ? ' · 账号' : ''}</label>
+        <div class="name-row">
+          <input id="myname" maxlength="12" placeholder="输入名字" value="${esc(nameVal)}"
+                 ${acc ? 'readonly title="名字跟着账号走，改不了"' : ''} />
+          ${hasAuth ? `<button class="btn small${acc ? ' ghost' : ' primary'}" id="authBtn">${acc ? '账号' : '登录'}</button>` : ''}
+        </div>
+        ${acc ? `<p class="dim small" style="margin:8px 0 0">已登录${acc.emailOk ? ' · 已绑邮箱' : ''}</p>` : ''}
       </div>
       <div class="lobby-actions">
         <button class="btn primary" id="createBtn">${offline ? '开始对局' : '创建对局'}</button>
@@ -369,6 +401,7 @@ function renderEntry() {
     </div>`;
 
   $('#createBtn').addEventListener('click', () => {
+    if (!gateOpen()) return gateHold(() => $('#createBtn') && $('#createBtn').click());
     const n = ($('#myname').value || '').trim() || '玩家';
     writeName(n);
     pendingBtn($('#createBtn'), '创建中…');
@@ -381,6 +414,7 @@ function renderEntry() {
       const n = ($('#myname').value || '').trim() || '玩家';
       const r = ($('#roomcode').value || '').trim().toUpperCase();
       if (!r) return toast('请输入对局码');
+      if (!gateOpen()) return gateHold(() => $('#joinBtn') && $('#joinBtn').click());
       writeName(n);
       pendingBtn(jb, '加入中…');
       Net.joinRoom(r, n);
@@ -394,6 +428,7 @@ function renderEntry() {
       const r = ($('#roomcode').value || '').trim().toUpperCase();
       if (!r) return toast('请输入对局码');
       if (typeof Net.watch !== 'function') return toast('当前模式不支持观战');
+      if (!gateOpen()) return gateHold(() => $('#watchBtn') && $('#watchBtn').click());
       pendingBtn(wb, '连接中…');
       Net.watch(r);
     });
@@ -418,6 +453,9 @@ function renderEntry() {
 
   const pb = $('#prefBtn');
   if (pb) pb.addEventListener('click', openPrefModal);
+
+  const ab = $('#authBtn');
+  if (ab) ab.addEventListener('click', () => Auth.openPanel());
 
   mountDownloadEntry();
   checkAppUpdate();
@@ -1205,6 +1243,8 @@ const LOBBY_TPL = `
         <section class="lobby-col">
           <div class="col-title">席位 <span id="seatCount"></span></div>
           <div class="seatlist" id="seatList"></div>
+          <div class="col-title" id="watchTitle" hidden>观战席 <span id="watchCount"></span></div>
+          <div class="watch-row" id="watchList" hidden></div>
         </section>
 
         <section class="lobby-col">
@@ -1224,9 +1264,13 @@ const LOBBY_TPL = `
           <p class="dim small" id="lobbyWait" style="margin-top:4px" hidden>等房主开局…</p>
           <div class="lobby-actions">
             <button class="btn primary" id="startBtn" disabled>开始对局</button>
+            <button class="btn primary" id="sitBtn" type="button" hidden>入座开局</button>
             <button class="btn ghost" id="leaveLobby" type="button">返回</button>
           </div>
           <p class="dim small" id="lobbyNeed" style="margin-top:8px" hidden>至少需要 2 位玩家（可以加对手）</p>
+          <div class="lobby-swap">
+            <button class="rule-edit" id="toSpecBtn" type="button" hidden>转为观战，把位置让出来</button>
+          </div>
         </section>
       </div>
     </div>`;
@@ -1248,9 +1292,14 @@ function mountLobby() {
     if (b && !b.disabled) Net.addAI(b.dataset.level);
   });
   $('#seatList').addEventListener('click', e => {
-    const b = e.target.closest ? e.target.closest('[data-remove]') : null;
-    if (b) Net.removeAI(b.dataset.remove);
+    const closest = sel => (e.target.closest ? e.target.closest(sel) : null);
+    const rm = closest('[data-remove]');
+    if (rm) return Net.removeAI(rm.dataset.remove);
+    const hb = closest('[data-host]');
+    if (hb) return Net.transferHost(hb.dataset.host);
   });
+  $('#sitBtn').addEventListener('click', () => Net.sit());
+  $('#toSpecBtn').addEventListener('click', () => Net.toSpectator());
   return $('#app .lobby-room');
 }
 
@@ -1325,6 +1374,8 @@ function paintSeats(room, isHost, levels) {
   const seen = UI.seatSet;
   const meId = Net.me?.playerId;
   const lvName = k => (levels.find(l => l.key === k) || {}).name || k;
+  /* 房主不再等于「0 号位」：转让之后房主可能是任何一位真人 */
+  const hostId = room.hostId;
   const pool = new Map();
   list.querySelectorAll('.seat').forEach(n => pool.set(n.dataset.pid, n));
   const keep = [];
@@ -1332,7 +1383,9 @@ function paintSeats(room, isHost, levels) {
   room.seats.forEach((s, i) => {
     // 内容没变就连 DOM 都不碰——否则每加一个人机，别的席位也会闪一下
     const sig = [s.name, s.connected ? 1 : 0, s.isAI ? 1 : 0, s.aiLevel || '',
-                 i === 0 ? 1 : 0, s.playerId === meId ? 1 : 0, (isHost && s.isAI) ? 1 : 0].join('|');
+                 s.playerId === hostId ? 1 : 0, s.playerId === meId ? 1 : 0,
+                 (isHost && s.isAI) ? 1 : 0,
+                 (isHost && !s.isAI && s.playerId !== meId) ? 1 : 0].join('|');
     let node = pool.get(s.playerId);
     if (!node || node.dataset.sig !== sig) {
       const isNew = !seen || !seen.has(s.playerId);
@@ -1344,8 +1397,10 @@ function paintSeats(room, isHost, levels) {
         ${s.playerId === meId ? '<span class="badge-you">你</span>' : ''}
         ${s.isAI ? `<span class="badge ai">对手 · ${esc(lvName(s.aiLevel))}</span>` : ''}</span>
       <span class="seat-right">
-        ${i === 0 ? '<span class="host">房主</span>' : ''}
+        ${s.playerId === hostId ? '<span class="host">房主</span>' : ''}
         ${(isHost && s.isAI) ? `<button class="mini-x" data-remove="${esc(s.playerId)}" title="移除这位对手">×</button>` : ''}
+        ${(isHost && !s.isAI && s.playerId !== meId)
+          ? `<button class="seat-op" data-host="${esc(s.playerId)}" title="把房主转让给 ${esc(s.name)}">移交</button>` : ''}
       </span>`;
       // 入场播完就摘掉，免得之后被谁移动一下又重播
       if (isNew) fresh.addEventListener('animationend', () => fresh.classList.remove('is-new'), { once: true });
@@ -1359,6 +1414,24 @@ function paintSeats(room, isHost, levels) {
   pool.forEach(n => n.remove());
   // 顺序跟着 room.seats 走：只在真的换了位置时才 insertBefore
   keep.forEach((n, i) => { if (list.children[i] !== n) list.insertBefore(n, list.children[i] || null); });
+}
+
+/* 观战席：只显示名字。没人的时候整块收起来，不占版面 */
+function paintWatchers(room) {
+  const wrap = $('#watchList');
+  const title = $('#watchTitle');
+  if (!wrap || !title) return;
+  const list = room.watchers || [];
+  const show = list.length > 0;
+  title.hidden = !show;
+  wrap.hidden = !show;
+  if (!show) { wrap.innerHTML = ''; wrap.dataset.sig = ''; return; }
+  setTxt('#watchCount', String(list.length));
+  const sig = list.map(w => `${w.name}/${w.connected === false ? 0 : 1}`).join(',');
+  if (wrap.dataset.sig === sig) return;
+  wrap.dataset.sig = sig;
+  wrap.innerHTML = list.map(w =>
+    `<span class="wchip${w.connected === false ? ' off' : ''}">${esc(w.name)}</span>`).join('');
 }
 
 function paintAILevels(levels, free) {
@@ -1408,7 +1481,13 @@ function renderLobby() {
   if (sb) sb.disabled = room.seats.length < 2;
 
   paintSeats(room, isHost, levels);
+  paintWatchers(room);
   paintAILevels(levels, free);
+
+  /* 座位 ⇄ 观战席只在开局前可换：开局后席位就和引擎里的 players 绑死了 */
+  const canSwap = !room.started;
+  showEl('#sitBtn', canSwap && Net.spectating && room.seats.length < 9);
+  showEl('#toSpecBtn', canSwap && !Net.spectating);
 
   // 折叠面板的展开状态只在第一帧定初值，之后完全交给用户。
   // 以前是 aiCount ? '' : 'open'——加第一个人机就把菜单硬收起来，正是"跳一下"的元凶。
@@ -2836,4 +2915,17 @@ applyUiPref(loadUiPref());
 window.addEventListener('DOMContentLoaded', () => {
   Net.autoResume();   // 若本地有会话则自动回到原席位
   render();
+  /* 账号状态是异步问服务端的：探回来之后重画一次入口页，
+     否则「登录」按钮要等下一次状态推送才会变成用户名。 */
+  if (typeof Auth !== 'undefined') {
+    Auth.onChange(() => setTimeout(() => {
+      if (!Net.room && !Net.view && $('#myname')) renderEntry();
+    }, 0));
+    Auth.init().then(() => {
+      /* 已经登录过、本地还留着 token：把名字同步进 df_name，
+         这样切到单机页也是同一个名字 */
+      const u = Auth.user;
+      if (u && readName() !== u.username) writeName(u.username);
+    });
+  }
 });

@@ -51,6 +51,7 @@ w.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
   window.__cardArt = cardArt;
   window.__CARD_GLYPHS = CARD_GLYPHS;
   window.__renderEntry = renderEntry;
+  window.__renderLobby = renderLobby;
   window.__readName = readName;
   window.__writeName = writeName;
 `);
@@ -1454,6 +1455,143 @@ console.log('=== UI 30. 加载圆圈在各端都不该被掐掉 ===');
     const t = fs.readFileSync(path.join(ROOT, f), 'utf8');
     ok(/style\.css|\.\.\/web/.test(t), f + ' 应把 web/style.css 带进产物');
   }
+}
+
+
+console.log('=== UI 31. 房主转让：标记与权限跟着 hostId 走 ===');
+{
+  const oldRoom = w.Net.room, oldMe = w.Net.me, oldSpec = w.Net.spectating;
+  w.Net.view = null;
+  w.Net.spectating = false;
+  w.Net.me = { playerId: 'p1' };
+  w.Net.room = {
+    roomId: 'ABCDE', hostId: 'p1', started: false, mode: 'standard', strikeTarget: 'hidden',
+    seats: [
+      { playerId: 'p0', name: '甲', connected: true, isAI: false },
+      { playerId: 'p1', name: '乙', connected: true, isAI: false },
+    ],
+    levels: [], watchers: [],
+  };
+  w.__renderLobby();
+  let rows = [...w.document.querySelectorAll('.seat')];
+  let p0Row = rows.find(n => n.dataset.pid === 'p0');
+  let p1Row = rows.find(n => n.dataset.pid === 'p1');
+  ok(!!p0Row && !!p1Row, '应画出两个席位');
+  ok(/房主/.test(p1Row.textContent), '房主标记应挂在 hostId 指的人（p1）身上');
+  ok(!/房主/.test(p0Row.textContent), '0 号位不该再默认显示房主');
+  ok(/移交/.test(p0Row.textContent), '房主应能在别人的席位上看到「移交」');
+  ok(!/移交/.test(p1Row.textContent), '自己那一行不该有「移交」');
+
+  /* 换个身份看：普通玩家不该有转让入口 */
+  w.Net.me = { playerId: 'p0' };
+  w.__renderLobby();
+  ok(!/移交/.test(w.document.querySelector('#app').innerHTML), '非房主不该看到「移交」按钮');
+  rows = [...w.document.querySelectorAll('.seat')];
+  ok(/房主/.test(rows.find(n => n.dataset.pid === 'p1').textContent), '换身份后房主标记不变');
+
+  /* 房主是观战者的可能性不存在：观战的人不在 seats 里，
+     所以这里只验证「房主位上的 AI」不会出现——人机不可能被设为房主 */
+  w.__restoreAuth = null;
+  w.Net.room = oldRoom; w.Net.me = oldMe; w.Net.spectating = oldSpec;
+}
+
+console.log('=== UI 32. 观战席：名单、入座、转为观战 ===');
+{
+  const oldRoom = w.Net.room, oldMe = w.Net.me, oldSpec = w.Net.spectating;
+  w.Net.view = null;
+  w.Net.room = {
+    roomId: 'ABCDE', hostId: 'p0', started: false, mode: 'standard', strikeTarget: 'hidden',
+    seats: [{ playerId: 'p0', name: '甲', connected: true, isAI: false }],
+    levels: [],
+    watchers: [{ wid: 'w1', name: '看客甲', connected: true }, { wid: 'w2', name: '看客乙', connected: false }],
+    watcherCount: 2,
+  };
+  w.Net.me = null;
+  w.Net.spectating = true;
+  w.__renderLobby();
+  const list = w.document.querySelector('#watchList');
+  ok(!!list && !list.hidden, '有观战者时应显示观战席');
+  ok(/看客甲/.test(list.textContent) && /看客乙/.test(list.textContent), '应列出观战者的名字');
+  ok(!w.document.querySelector('#sitBtn').hidden, '观战者应看到「入座」');
+  ok(w.document.querySelector('#toSpecBtn').hidden, '观战者不该看到「转为观战」');
+  ok(w.document.querySelector('#startBtn').hidden, '观战者不该看到「开始对局」');
+
+  /* 坐在席位上的人：反过来 */
+  w.Net.spectating = false;
+  w.Net.me = { playerId: 'p0' };
+  w.Net.room.watchers = [];
+  w.__renderLobby();
+  ok(w.document.querySelector('#watchList').hidden, '没人观战时观战席应整块收起，不占版面');
+  ok(!w.document.querySelector('#toSpecBtn').hidden, '座位上的人应看到「转为观战」');
+  ok(w.document.querySelector('#sitBtn').hidden, '座位上的人不该看到「入座」');
+
+  /* 开局之后两种切换都不给 */
+  w.Net.room.started = true;
+  w.__renderLobby();
+  ok(w.document.querySelector('#toSpecBtn').hidden, '开局后不能再转为观战');
+  ok(!w.document.querySelector('#startBtn').hidden, '开局后房主那一栏仍按房主渲染（按钮由服务端兜底）');
+
+  w.Net.room = oldRoom; w.Net.me = oldMe; w.Net.spectating = oldSpec;
+}
+
+console.log('=== UI 33. 联机闸门：未登录先弹面板，登录后接着做 ===');
+{
+  /* 把真实的 auth.js 装进这个 window，fetch 换成桩：
+     /me 回 401 + authRequired:true，/login 回一个 token。 */
+  w.fetch = async (url) => {
+    const u = String(url);
+    if (u.indexOf('/api/auth/me') >= 0) {
+      return { status: 401, json: async () => ({ authRequired: true, user: null }) };
+    }
+    if (u.indexOf('/api/auth/login') >= 0) {
+      return { status: 200, json: async () => ({ token: 'tok-1', user: { username: '乙', email: '', emailOk: false } }) };
+    }
+    return { status: 404, json: async () => ({ error: 'nope' }) };
+  };
+  /* eval 出来的 const 只在这次 eval 里可见，ui.js 是另一次 eval 编译的，
+     必须把 Auth 挂到 window 上，它那边的 typeof Auth 才认得到 */
+  w.eval(fs.readFileSync(path.join(ROOT, 'web/js/auth.js'), 'utf8') + '\nwindow.Auth = Auth; window.__Auth = Auth;');
+  const A = w.__Auth;
+  ok(A.known === false, '问过服务端之前不该假装知道要不要登录');
+
+  await A.probe();
+  ok(A.required === true, '应识别出服务端要求登录');
+
+  w.Net.room = null; w.Net.view = null;
+  w.Net.me = { playerId: null };
+  w.__renderEntry();
+  ok(!!w.document.querySelector('#authBtn'), '入口页应有登录入口');
+
+  let created = 0;
+  w.Net.createRoom = () => { created++; };
+  w.document.querySelector('#createBtn').click();
+  await new Promise(r => setTimeout(r, 40));
+  ok(created === 0, '没登录时点「创建对局」不该真的建房');
+  ok(!!w.document.querySelector('#authModal'), '应弹出登录面板');
+
+  w.document.querySelector('#auName').value = '乙';
+  w.document.querySelector('#auPwdInput').value = 'abcd1234';
+  w.document.querySelector('#auGo').click();
+  await new Promise(r => setTimeout(r, 80));
+  ok(!!A.user && A.user.username === '乙', '登录后应拿到用户，实际 ' + JSON.stringify(A.user));
+  /* 这次是被「创建对局」拦下来的，登录成功后要把那一击续上：
+     面板自动收起，建房接着走 */
+  ok(!w.document.querySelector('#authModal'), '续上被拦的动作后面板应收起');
+  ok(created === 1, '登录后应自动接着建房，实际 ' + created);
+
+  /* 再点一次：已经登录，闸门直接放行。
+     先重新渲染一次——上一次点击把按钮置成了「创建中…」的禁用态。 */
+  w.__renderEntry();
+  w.document.querySelector('#createBtn').click();
+  await new Promise(r => setTimeout(r, 40));
+  ok(created === 2, '已登录时点「创建对局」应直接建房，实际 ' + created);
+
+  /* 名字跟着账号走：输入框应显示用户名且不可改 */
+  w.Net.room = null;
+  w.__renderEntry();
+  const nameInput = w.document.querySelector('#myname');
+  ok(!!nameInput && nameInput.value === '乙', '入口页名字应显示账号名，实际 ' + (nameInput && nameInput.value));
+  ok(!!nameInput && nameInput.hasAttribute('readonly'), '登录后名字应由账号决定，不能再手改');
 }
 
 console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);

@@ -33,3 +33,9 @@ desktop-tauri/src-tauri/gen/
 
 # 大文件：安装包走 GitHub Release 上传，不进 git 历史
 # （GitHub 单文件上限 100 MB，setup.exe 有 112 MB）
+
+# 本地账号库（开发机自己用，不进仓库）
+server/data/
+
+# esbuild 打出来的测试包（npm test 每次重建）
+worker/.test/

@@ -213,5 +213,120 @@ const beforeN = wv.sent.filter(x => x.t === 'state').length;
 await send(room7, h7, { t: 'act', action: { type: 'end' } });
 ok(wv.sent.filter(x => x.t === 'state').length > beforeN, '玩家行动后观战者应收到新 state');
 
+
+console.log('=== 11. 房主：显式身份与转让 ===');
+const ctx8 = makeCtx();
+const room8 = new Room(ctx8, env);
+await room8.fetch(new Request('https://do/init?room=HOST1', { method: 'POST' }));
+const a8 = makeWS(), b8 = makeWS();
+ctx8.acceptWebSocket(a8); ctx8.acceptWebSocket(b8);
+await send(room8, a8, { t: 'hello', name: 'A' });
+await send(room8, b8, { t: 'hello', name: 'B' });
+ok(room8.hostId() === 'p0', '第一个进来的人应是房主，实际 ' + room8.hostId());
+
+await send(room8, b8, { t: 'transferHost', playerId: 'p0' });
+ok(b8.sent.some(x => x.t === 'error' && /只有房主/.test(x.msg)), '非房主不能转让房主');
+
+await send(room8, a8, { t: 'transferHost', playerId: 'p1' });
+const lob8 = a8.sent.filter(x => x.t === 'lobby').pop();
+ok(!!lob8 && lob8.room.hostId === 'p1', '转让后大厅的房主应是 p1，实际 ' + (lob8 && lob8.room.hostId));
+ok(room8.hostId() === 'p1', '转让后 hostId() 应立刻生效');
+
+/* 转让不只是换个牌子：权限要真的跟着走 */
+await send(room8, a8, { t: 'mode', mode: 'fast' });
+ok(a8.sent.some(x => x.t === 'error' && /房主/.test(x.msg)), '原房主转让后不能再改规则');
+await send(room8, b8, { t: 'mode', mode: 'fast' });
+ok(room8.data.mode === 'fast', '新房主应能改规则，实际 ' + room8.data.mode);
+
+/* 只能给真人 */
+await send(room8, b8, { t: 'addAI', level: 'chaotic_era' });
+const ai8 = room8.data.seats.find(s => s.isAI);
+ok(!!ai8, '应加上一个人机');
+await send(room8, b8, { t: 'transferHost', playerId: ai8.playerId });
+ok(b8.sent.some(x => x.t === 'error' && /真人/.test(x.msg)), '不能把房主转给人机');
+ok(room8.hostId() === 'p1', '被拒的转让不该改变房主');
+
+/* 开局之后没必要（也没有意义）再转让：房主权限在局内不生效 */
+await send(room8, b8, { t: 'start' });
+ok(room8.data.started, '应能开局');
+await send(room8, b8, { t: 'transferHost', playerId: 'p0' });
+ok(b8.sent.some(x => x.t === 'error' && /已经开始/.test(x.msg)), '开局后不能再转让房主');
+
+console.log('=== 12. 房主离开：自动交给下一个真人，连接不失效 ===');
+const ctx9 = makeCtx();
+const room9 = new Room(ctx9, env);
+await room9.fetch(new Request('https://do/init?room=HOST2', { method: 'POST' }));
+const a9 = makeWS(), b9 = makeWS();
+ctx9.acceptWebSocket(a9); ctx9.acceptWebSocket(b9);
+await send(room9, a9, { t: 'hello', name: 'A' });
+await send(room9, b9, { t: 'hello', name: 'B' });
+ok(room9.hostId() === 'p0', 'A 是房主');
+await send(room9, a9, { t: 'leave' });
+ok(room9.data.seats.length === 1, '未开局时离开应删掉席位');
+ok(room9.hostId() === 'p0', '房主应自动交给留下的 B（重排后是 p0），实际 ' + room9.hostId());
+/* 关键回归：席位重排改了 playerId，B 那条连接的 attachment 必须跟着改，
+   否则他下一条消息就会被当成「席位不存在」。 */
+b9.sent.length = 0;
+await send(room9, b9, { t: 'addAI', level: 'chaotic_era' });
+ok(!b9.sent.some(x => x.t === 'error'), '重排后原连接的席位仍然有效，不该报错：' + JSON.stringify(b9.sent.filter(x => x.t === 'error')));
+ok(room9.data.seats.some(s => s.isAI), '新房主应能添加人机');
+
+console.log('=== 13. 观战席：入座、起身、开局后锁死 ===');
+const ctx10 = makeCtx();
+const room10 = new Room(ctx10, env);
+await room10.fetch(new Request('https://do/init?room=SPEC1', { method: 'POST' }));
+const a10 = makeWS(), b10 = makeWS(), c10 = makeWS();
+ctx10.acceptWebSocket(a10); ctx10.acceptWebSocket(b10); ctx10.acceptWebSocket(c10);
+await send(room10, a10, { t: 'hello', name: 'A' });
+await send(room10, b10, { t: 'hello', name: 'B' });
+
+await send(room10, c10, { t: 'hello', spectate: true, name: '看客' });
+const j10 = c10.sent.find(x => x.t === 'joined');
+ok(!!j10 && j10.spectator === true && !!j10.wid, '观战者应拿到 wid');
+ok(room10.data.seats.length === 2, '观战不占玩家席');
+ok(room10.data.watchers.length === 1, '观战席应有 1 人，实际 ' + room10.data.watchers.length);
+const lob10 = a10.sent.filter(x => x.t === 'lobby').pop();
+ok(!!lob10 && lob10.room.watchers.length === 1, '大厅推送里应带上观战席');
+ok(!!lob10 && lob10.room.watchers[0].name === '看客', '观战席应显示名字');
+
+/* 观战者入座 */
+await send(room10, c10, { t: 'sit' });
+const j10b = c10.sent.filter(x => x.t === 'joined').pop();
+ok(!!j10b && !!j10b.playerId && !!j10b.token, '入座后应拿到席位与重连 token');
+ok(room10.data.seats.length === 3, '入座后应占一个玩家席，实际 ' + room10.data.seats.length);
+ok(room10.data.watchers.length === 0, '入座后应从观战席移除');
+
+/* 入座之后能正常操作（不再被当成观战者） */
+await send(room10, c10, { t: 'mode', mode: 'fast' });
+ok(c10.sent.some(x => x.t === 'error' && /只有房主/.test(x.msg)),
+  '入座后应按玩家身份处理（这里是因为他不是房主而被拒，而不是"观战中不能操作"');
+
+/* 玩家起身去观战 */
+await send(room10, b10, { t: 'spectate' });
+const j10c = b10.sent.filter(x => x.t === 'joined').pop();
+ok(!!j10c && j10c.spectator === true, '起身后应收到观战 joined');
+ok(b10.sent.some(x => x.t === 'unseat'), '起身后要通知前端作废原席位 token');
+ok(room10.data.seats.length === 2, '起身后应让出席位，实际 ' + room10.data.seats.length);
+ok(room10.data.watchers.length === 1, '起身后应出现在观战席');
+
+/* 起身之后不能再操作 */
+const seatsBefore10 = room10.data.seats.length;
+await send(room10, b10, { t: 'act', action: { type: 'end' } });
+ok(b10.sent.some(x => x.t === 'error' && /观战/.test(x.msg)), '观战席上不能操作对局');
+ok(room10.data.seats.length === seatsBefore10, '被拒的动作不该改变房间');
+
+/* 开局后两种切换都要拒绝 */
+await send(room10, a10, { t: 'start' });
+ok(room10.data.started, '应能开局');
+await send(room10, b10, { t: 'sit' });
+ok(b10.sent.some(x => x.t === 'error' && /已开始/.test(x.msg)), '开局后观战者不能再入座');
+await send(room10, a10, { t: 'spectate' });
+ok(a10.sent.some(x => x.t === 'error' && /已开始/.test(x.msg)), '开局后玩家不能转观战');
+ok(room10.data.seats.length === 2, '被拒的切换不该改变席位');
+
+/* 观战者断开：从观战席摘掉，不留幽灵（此刻 b10 才是观战席上的人） */
+await room10.webSocketClose(b10);
+ok(room10.data.watchers.length === 0, '观战连接断开后应从观战席移除');
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`);
 process.exit(fail ? 1 : 0);

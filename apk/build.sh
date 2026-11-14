@@ -54,7 +54,7 @@ cp "$ROOT/web/favicon.ico" "$ROOT/web/favicon.png" "$ROOT/web/apple-touch-icon.p
 # 背景图（style.css 里 url("img/bg-forest.jpg")）——漏了它 APK 里就是纯色底
 mkdir -p build/assets/www/img
 cp "$ROOT/web/img/"*.jpg build/assets/www/img/ 2>/dev/null || true
-cp "$ROOT/web/js/ui.js" "$ROOT/web/js/local.js" "$ROOT/web/js/net.js" build/assets/www/js/
+cp "$ROOT/web/js/ui.js" "$ROOT/web/js/local.js" "$ROOT/web/js/net.js" "$ROOT/web/js/auth.js" build/assets/www/js/
 [ -f "$ROOT/web/js/net-lan.js" ] && cp "$ROOT/web/js/net-lan.js" build/assets/www/js/
 cp "$ROOT/shared/cards.js" "$ROOT/shared/rules.js" "$ROOT/shared/ai.js" "$ROOT/shared/view.js" build/assets/www/shared/
 # file:// 下 ../shared 解析不到，改成 assets 内的相对路径；
