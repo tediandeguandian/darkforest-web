@@ -134,10 +134,10 @@ ok(v5.arrow && v5.arrow.playerId === 'p0', '箭头归属（当下可见）应下
 
 console.log('=== 8. 弃牌堆最简说明（cardFacts）===');
 const { CARD_DEFS, cardFacts } = require('../shared/cards.js');
-// 3 个 "面未公开" 占位不进牌库，也不算一种牌
+// 1 个「广播」占位不进牌库，也不算一种牌
 const keys = Object.keys(CARD_DEFS).filter(k => !CARD_DEFS[k].hidden);
 ok(keys.length === 19, '共 19 种卡牌，实际 ' + keys.length);
-ok(Object.keys(CARD_DEFS).length === 22, '另有 3 个未翻面占位');
+ok(Object.keys(CARD_DEFS).length === 20, '另有 1 个未公开的广播占位');
 const bad = keys.filter(k => {
   const f = cardFacts(k);
   return !f || typeof f.cost !== 'number' || !f.main || !f.sub;
@@ -695,20 +695,26 @@ console.log('=== 19. 广播牌不提前暴露合作/伪装 ===');
   SQ.currentIdx = 0; SQ.step = 'action';
   gQ.playBroadcast('p0', 'q1', 2);
 
-  // 19.1 战报不写面
+  // 19.1 战报既不写正反面，也不写是哪一档广播、不给任何射程约束
   const logLine = SQ.log[0].text;
-  ok(/恒星广播/.test(logLine) && !/伪装|合作/.test(logLine), '战报不能出现面：' + logLine);
+  ok(/广播/.test(logLine), '战报应说明发布了广播：' + logLine);
+  ok(!/恒星|宇宙|超距|伪装|合作|距离|≤|格|任意星系/.test(logLine), '战报泄露档位 / 面 / 射程：' + logLine);
 
-  // 19.2 事件不泄露
+  // 19.2 事件不泄露任何档位线索
   const castEv = SQ.events.filter(e => e.type === 'broadcast_cast').pop();
-  ok(castEv && castEv.family === 'star_hidden', '事件只给家族，实际 ' + JSON.stringify(castEv));
+  ok(castEv && castEv.family === undefined, '事件不应带 family：' + JSON.stringify(castEv));
+  ok(castEv && castEv.radius === undefined, '事件不应带 radius：' + JSON.stringify(castEv));
+  ok(castEv && castEv.distance === undefined, '事件不应带 distance：' + JSON.stringify(castEv));
   ok(!castEv.card, '事件里不应有原始卡牌 key');
+  ok(castEv.target === 2, '事件仍应公开目标星系');
 
   // 19.3 视图：别人看不到面，发布者自己看得到
   const vOther = viewFor(gQ, 'p1');
   ok(vOther.broadcast.card.revealed === false, '旁观者不应看到已翻面');
   ok(!/合作|伪装/.test(vOther.broadcast.card.name), '旁观者拿到的是脱敏名：' + vOther.broadcast.card.name);
   ok(CARD_DEFS[vOther.broadcast.card.key].hidden === true, '旁观者拿到的 key 应是未翻面占位');
+  ok(vOther.broadcast.card.key === 'broadcast_hidden', '旁观者拿到统一占位 key');
+  ok(!/恒星|宇宙|超距/.test(vOther.broadcast.card.name), '旁观者名字不能带档位：' + vOther.broadcast.card.name);
   const vSelf = viewFor(gQ, 'p0');
   ok(vSelf.broadcast.card.revealed === true && vSelf.broadcast.card.key === 'star_disg', '发布者自己知道是哪一面');
 
@@ -1240,52 +1246,69 @@ ok(viewFor(gH, 'p2').events.every(e => e.type !== 'strike_cast' || e.target === 
 
 }
 
-// 25. 广播不得泄露发布者的实际位置
-//    战报里出现「距离 N」＝把发布者到目标星系的真实格数公开了；
-//    目标星系是公开的，距离一公开，坐标就等于公开了。
-//    唯一能公开的是「这张牌的射程」——即发布者在目标星系 N 格以内。
-console.log('=== 25. 广播不泄露实际距离（只给射程） ===');
+// 25. 广播对外只有「广播」两个字
+//    以前会公开射程（恒星 1 / 宇宙 2 / 超距 ∞），对手能借此把发布者
+//    锁定在目标星系 N 格以内。现在三档必须完全无法区分：
+//    战报、事件、视图里的 key / 名字一律相同，连图标线索都不能分档。
+console.log('=== 25. 广播不泄露档位、正反面与实际距离 ===');
 {
-  // 25.1 实际距离 1、牌射程 2：战报必须写「≤ 2 格」，不能写「距离 1」
-  const g25 = createGame(['甲', '乙'], { strikeTarget: 'open' });
-  const S25 = g25.state();
-  S25.players[0].galaxy = 1;      // 甲在 1 号
-  S25.players[1].galaxy = 6;      // 乙在 6 号（离得远，够不着）
-  S25.players[0].energy = 10;
-  S25.players[0].hand = [{ uid: 'z1', key: 'cosmic_disg' }];   // 宇宙广播·伪装，射程 2
-  S25.currentIdx = 0; S25.step = 'action';
-  g25.playBroadcast('p0', 'z1', 2);                            // 目标 2 号 → 实际距离 1
+  const cases = [
+    { key: 'star_disg',   label: '恒星·伪装' },
+    { key: 'cosmic_coop', label: '宇宙·合作' },
+    { key: 'ftl_coop',    label: '超距·合作' },
+  ];
+  const seen = [];
+  for (const c of cases) {
+    const g = createGame(['甲', '乙'], { strikeTarget: 'open' });
+    const S = g.state();
+    // 距离 0：三档都发得出去（这里测的是脱敏，不是射程）；不给乙广播牌，战报保持干净
+    S.players[0].galaxy = 7; S.players[1].galaxy = 9;
+    S.players[0].energy = 10;
+    S.players[0].hand = [{ uid: 'b1', key: c.key }];
+    S.players[1].hand = [{ uid: 'n1', key: 'nuke' }];
+    S.currentIdx = 0; S.step = 'action';
+    const r = g.playBroadcast('p0', 'b1', 7);
+    ok(r.ok, `${c.label} 应能发布：${r.msg || ''}`);
+    if (!r.ok) continue;
 
-  const log25 = S25.log[0].text;
-  ok(!/距离\s*\d/.test(log25), '战报不得出现「距离 N」：' + log25);
-  ok(!/距目标\s*≤\s*1\s*格/.test(log25), '战报不得把实际距离当成射程：' + log25);
-  ok(/距目标\s*≤\s*2\s*格/.test(log25), '战报应写牌的射程（2 格）：' + log25);
+    const line = S.log[0].text;
+    ok(/广播/.test(line), `${c.label} 战报应写明是广播：${line}`);
+    ok(!/恒星|宇宙|超距|合作|伪装|距离|≤|任意星系/.test(line), `${c.label} 战报泄露档位：${line}`);
 
-  // 25.2 事件里不能有实际距离，只能有射程
-  const ev25 = S25.events.filter(e => e.type === 'broadcast_cast').pop();
-  ok(ev25 && ev25.distance === undefined, '事件不得携带实际距离，实际 ' + JSON.stringify(ev25));
-  ok(ev25 && ev25.radius === 2, '事件只应给射程 radius=2，实际 ' + JSON.stringify(ev25));
+    const ev = S.events.filter(e => e.type === 'broadcast_cast').pop();
+    ok(ev && ev.family === undefined && ev.radius === undefined && ev.distance === undefined && !ev.card,
+      `${c.label} 事件携带档位线索：${JSON.stringify(ev)}`);
+    ok(ev && ev.target === 7, `${c.label} 事件仍应公开目标星系`);
 
-  // 25.3 旁观者拿到的战报与事件都一样干净
-  const v25 = viewFor(g25, 'p1');
-  ok(!/距离\s*\d/.test(v25.log[0].text), '旁观者战报同样不得出现实际距离');
-  const vEv = v25.events.filter(e => e.type === 'broadcast_cast').pop();
-  ok(vEv && vEv.distance === undefined, '旁观者事件同样不得带实际距离');
-  ok(!/"distance"/.test(JSON.stringify(v25.events)), '整条事件流里都不该有 distance 字段');
+    // open 模式不做打击脱敏，广播事件也必须干净（视图层无条件兜底裁剪）
+    const v = viewFor(g, 'p1');
+    ok(v.broadcast.card.revealed === false, `${c.label} 旁观者不应看到已翻面`);
+    ok(v.broadcast.card.key === 'broadcast_hidden', `${c.label} 旁观者 key 应统一`);
+    ok(!/恒星|宇宙|超距|合作|伪装/.test(v.broadcast.card.name), `${c.label} 名字泄露档位`);
+    const vEv = v.events.filter(e => e.type === 'broadcast_cast').pop();
+    ok(vEv && vEv.family === undefined && vEv.radius === undefined,
+      `${c.label} 视图事件仍带档位线索：${JSON.stringify(vEv)}`);
+    ok(!/"(radius|family|distance)"/.test(JSON.stringify(v.events)),
+      `${c.label} 整条事件流都不该有档位字段`);
+    ok(!/恒星|宇宙|超距/.test(v.log[0].text), `${c.label} 旁观者战报泄露档位`);
 
-  // 25.4 超距广播：射程 ∞，不构成任何约束
-  const g25b = createGame(['甲', '乙'], { strikeTarget: 'open' });
-  const S25b = g25b.state();
-  S25b.players[0].galaxy = 1; S25b.players[1].galaxy = 9;
-  S25b.players[0].energy = 10;
-  S25b.players[0].hand = [{ uid: 'y1', key: 'ftl_coop' }];     // 超距广播·合作
-  S25b.currentIdx = 0; S25b.step = 'action';
-  g25b.playBroadcast('p0', 'y1', 7);                            // 目标 7 号
-  const log25b = S25b.log[0].text;
-  ok(!/距离\s*\d/.test(log25b), '超距广播的战报也不得出现实际距离：' + log25b);
-  ok(/任意星系/.test(log25b), '超距广播应写「任意星系」：' + log25b);
-  const ev25b = S25b.events.filter(e => e.type === 'broadcast_cast').pop();
-  ok(ev25b && ev25b.radius === null, '超距广播的 radius 应为 null（无约束）');
+    // 发布者自己始终看得见真实牌（自己出的牌自己当然知道）
+    const self = viewFor(g, 'p0');
+    ok(self.broadcast.card.revealed === true && self.broadcast.card.key === c.key,
+      `${c.label} 发布者应看得见自己的真实 key`);
+
+    seen.push(v.broadcast.card.key + '|' + v.broadcast.card.name + '|' + line);
+  }
+  ok(new Set(seen).size === 1, '三档广播对外必须完全一致，实际：' + JSON.stringify(seen));
+
+  // 25.5 旧对局存档里若还留着老字段，视图层也必须抹掉
+  const gOld = createGame(['甲', '乙'], { strikeTarget: 'open' });
+  gOld.state().events.push({ id: 999, type: 'broadcast_cast', actor: 'p0', target: 7,
+                             family: 'star_hidden', radius: 1, distance: 1 });
+  const vOld = viewFor(gOld, 'p1');
+  const eOld = vOld.events.filter(e => e.type === 'broadcast_cast').pop();
+  ok(eOld && eOld.family === undefined && eOld.radius === undefined && eOld.distance === undefined,
+    '旧存档里的 family/radius/distance 必须被抹掉：' + JSON.stringify(eOld));
 }
 
 // 26. 弃牌条目带出牌人（窄屏靠它显示「谁出的」，不画跨屏箭头）

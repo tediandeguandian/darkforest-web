@@ -53,9 +53,19 @@ function publicPlayer(p, playerId, opts) {
  */
 function visibleEvents(S, playerId) {
   const src = (S.events || []).slice(-160);
-  if (S.strikeTarget !== 'hidden') return src;
   return src.map(e => {
-    if (!e || e.actor === playerId) return e;          // 自己发的，自己知道
+    if (!e) return e;
+    // 广播事件一律不带档位线索：family / radius / distance 里任何一个都能反推
+    // 「发布者用的是哪一档」，等价于泄露他的位置范围。这里无条件兜一层——
+    // 旧对局存档里可能还留着这些老字段，open 模式（不做打击脱敏）也不能漏。
+    if (e.type === 'broadcast_cast') {
+      const b = Object.assign({}, e);
+      delete b.family;
+      delete b.radius;
+      delete b.distance;
+      return b;
+    }
+    if (S.strikeTarget !== 'hidden' || e.actor === playerId) return e;
     // 只在「发射 / 撤回 / 坠毁」这三个阶段藏目标；命中与落空本身就是要公开的
     if (e.type !== 'strike_cast' && e.type !== 'strike_withdraw' && e.type !== 'strike_void') return e;
     const out = Object.assign({}, e);
@@ -119,7 +129,7 @@ function viewFor(game, playerId) {
     const isCaster = !!pid && B.casterId === pid;
     broadcast = {
       casterId: B.casterId,
-      // 广播牌的「合作 / 伪装」面要在结算时才翻：除发布者本人，谁都不下发真实 key
+      // 对外只有「广播」两个字：射程档位、正反面、真实 key 一律不下发
       card: isCaster
         ? { uid: B.card.uid, key: B.card.key, name: CARD_DEFS[B.card.key].name, revealed: true }
         : { uid: B.card.uid, key: C.hideFace(B.card.key), name: C.familyName(B.card.key), revealed: false },

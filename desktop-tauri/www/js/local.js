@@ -380,8 +380,9 @@ const Net = (() => {
     get me() { return state.me; },
     get connected() { return true; },
     get roomId() { return state.roomId; },
-    name() { return ''; },
-    setName() {},
+    // 名字和联机页共用同一个 key：否则单机页改名不落盘，切到联机页又读回旧名字
+    name() { try { return localStorage.getItem('df_name') || ''; } catch (e) { return ''; } },
+    setName(n) { try { localStorage.setItem('df_name', n); } catch (e) {} },
     hasSession() { return false; },
   };
 })();

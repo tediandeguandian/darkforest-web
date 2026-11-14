@@ -67,15 +67,14 @@
   --ease-out:cubic-bezier(.16,1,.3,1);
   --dur-1:160ms; --dur-2:220ms; --dur-3:300ms;
 
-  /* 面板底色：毛玻璃关闭时是实色，打开后由 body.frost 换成 --frost-a */
+  /* 面板底色：body.frost 固定开启，由 applyUiPref 写入 --frost-a */
   --panel-a:.92;
   --glass:rgba(18,23,33,var(--panel-a));
   --glass-2:rgba(26,33,48,var(--panel-a));
   --blur:0px;
 }
 
-/* 毛玻璃：0.40 → 0.95，由设置面板实时写 --frost-a。
-   关闭时 --blur 为 0，所有 backdrop-filter 等于没开，面板就是实色。 */
+/* 毛玻璃固定一档：由 applyUiPref 写入 --frost-a / --frost-blur，不再提供开关与浓度。 */
 body.frost{ --panel-a:var(--frost-a,.78); --blur:var(--frost-blur,14px) }
 body.frost .hud,
 body.frost .mybar,
@@ -425,6 +424,12 @@ a{color:var(--cyan)}
 }
 .fold[data-open="0"] .fold-body{opacity:0}
 .fold[data-open="1"] .fold-body{opacity:1}
+/* 两栏并排（JS 打上 .wide）：席位与「添加对手」同时可见，不必折叠。
+   藏掉 −/+，标题也不再像按钮 —— 不然用户点一下没反应会以为坏了。 */
+.fold.wide .fold-head{cursor:default}
+.fold.wide .fold-head:hover{background:none;color:var(--txt-2)}
+.fold.wide .fold-head::after{display:none}
+.fold.wide .fold-note{margin-right:0}
 .ai-levels{display:flex;flex-direction:column;gap:5px;padding:0 8px 8px}
 .ai-btn{
   display:grid;grid-template-columns:1fr auto;grid-template-areas:"n r" "b b";
@@ -902,13 +907,13 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
 /* ---- 手牌 ---- */
 .hand{
   display:flex;gap:8px;align-items:flex-end;
-  overflow-x:auto;overflow-y:visible;padding:6px 2px 2px;min-height:118px;
+  overflow-x:auto;overflow-y:visible;padding:6px 2px 2px;min-height:130px;
   scrollbar-width:thin;
 }
 .hand::-webkit-scrollbar{height:4px}
 .hand::-webkit-scrollbar-thumb{background:rgba(152,175,208,.18);border-radius:4px}
 .pcard{
-  position:relative;flex:0 0 auto;width:96px;height:130px;
+  position:relative;flex:0 0 auto;width:96px;height:142px;
   display:flex;flex-direction:column;gap:2px;
   padding:9px 9px 8px;border-radius:var(--r-m);cursor:pointer;
   background:linear-gradient(168deg,var(--cardface) 0%,var(--cardface-2) 100%);
@@ -940,10 +945,24 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
 .pcard.poor{opacity:.5}
 .pcard.poor .pc-cost{color:var(--red)}
 .pcard.reserved{border-style:dashed;border-color:rgba(102,204,217,.32)}
-.pc-glyph{
-  position:absolute;right:7px;top:26px;
-  font-size:34px;line-height:1;font-weight:700;
-  color:#fff;opacity:.045;pointer-events:none;letter-spacing:0;
+/* 卡面矢量图：颜色跟卡片类型走（--kind），尺寸由容器决定 */
+.card-art-svg{display:block;width:100%;height:100%;overflow:visible}
+.pc-art{
+  width:32px;height:32px;flex:0 0 auto;align-self:center;margin:2px 0 0;
+  color:var(--kind,var(--txt));
+}
+.pc-art .card-art-svg{filter:drop-shadow(0 1px 3px rgba(0,0,0,.5))}
+.sm-art{
+  width:34px;height:34px;flex:0 0 auto;align-self:flex-start;margin:0 0 2px;
+  color:var(--kind,var(--txt));
+}
+.dc-name .card-art-svg{
+  display:inline-block;width:10px;height:10px;vertical-align:-1px;
+  margin-right:2px;color:var(--kind,var(--dim));opacity:.9;
+}
+.eq .card-art-svg{
+  display:inline-block;width:12px;height:12px;vertical-align:-2px;
+  margin-right:3px;opacity:.85;
 }
 .pc-top{display:flex;align-items:center;justify-content:space-between;gap:4px}
 .pc-cost{
@@ -1010,6 +1029,9 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   color:var(--dim);cursor:pointer;
   transition:border-color var(--dur-2) var(--ease),background var(--dur-2) var(--ease),transform var(--dur-2) var(--ease);
 }
+.dchip.build{--kind:#63bf90}
+.dchip.broadcast{--kind:#66ccd9}
+.dchip.strike{--kind:#ec6a5f}
 .dchip:hover{background:rgba(20,27,41,.9);border-color:var(--line-hi)}
 .dc-top{display:flex;align-items:baseline;justify-content:space-between;gap:4px}
 .dc-name{
@@ -1154,6 +1176,37 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
 }
 .dlg-ver:last-child{border-bottom:0}
 .dlg-verline{font-family:ui-monospace,monospace;font-size:11px;color:var(--faint)}
+
+/* ---- 应用内更新（下载 / 安装 / 完成 / 失败） ----
+   一条进度条承担全部反馈：宽度就是真实百分比，不做假的"无限来回"。
+   只有安装那一步（外部命令在跑、拿不到进度）才切成流动条纹。 */
+.up-dlg{max-width:420px}
+.up-track{
+  position:relative;height:8px;margin:14px 0 8px;
+  border-radius:5px;background:rgba(8,11,17,.72);
+  border:1px solid var(--hair);overflow:hidden;
+}
+.up-fill{
+  height:100%;width:0;border-radius:4px;
+  background:linear-gradient(90deg,rgba(232,180,95,.55),var(--gold));
+  box-shadow:0 0 10px rgba(232,180,95,.35);
+  transition:width .22s var(--ease);
+}
+.up-track.is-busy .up-fill{
+  background:repeating-linear-gradient(90deg,var(--gold) 0 9px,rgba(232,180,95,.35) 9px 18px);
+  background-size:18px 100%;
+  animation:upStripe .65s linear infinite;
+}
+.up-track.is-done .up-fill{
+  background:linear-gradient(90deg,rgba(99,191,144,.55),var(--green));
+  box-shadow:0 0 10px rgba(99,191,144,.3);
+}
+.up-meta{
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;
+}
+.up-err{color:var(--red);word-break:break-word}
+@keyframes upStripe{to{background-position:18px 0}}
 .dlg-list{display:flex;flex-direction:column;gap:6px;margin:12px 0}
 .dl-item{
   display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r-s);
@@ -1304,11 +1357,11 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   padding:12px 12px 11px;border-radius:var(--r-m);min-height:150px;
   background:linear-gradient(168deg,var(--cardface),var(--cardface-2));
   border:1px solid rgba(152,175,208,.16);
-  border-top:2px solid #63bf90;
+  --kind:#63bf90;border-top:2px solid var(--kind);
   box-shadow:0 8px 20px -14px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.04);
 }
-.sm-card.broadcast{border-top-color:#66ccd9}
-.sm-card.strike{border-top-color:#ec6a5f}
+.sm-card.broadcast{--kind:#66ccd9;border-top-color:var(--kind)}
+.sm-card.strike{--kind:#ec6a5f;border-top-color:var(--kind)}
 .sm-top{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
 .sm-name{font-size:13px;font-weight:600;line-height:1.3;color:var(--txt)}
 .sm-cost{flex:0 0 auto;font-family:ui-monospace,monospace;font-size:11.5px;font-weight:700;color:var(--gold)}
@@ -1505,7 +1558,7 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
 @media (max-width:1280px){
   .board{grid-template-columns:minmax(0,168px) minmax(0,1fr) minmax(0,168px);gap:8px}
   .tray{flex-basis:246px}
-  .pcard{width:88px;height:122px}
+  .pcard{width:88px;height:134px}
 }
 @media (max-width:1120px){
   .board{grid-template-columns:minmax(0,152px) minmax(0,1fr) minmax(0,152px)}
@@ -1543,8 +1596,8 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   .tray-row.last{flex:1 1 auto}
   .dlist{max-height:none}
   .mybar{padding:8px 10px calc(10px + env(safe-area-inset-bottom,0px));gap:6px}
-  .hand{min-height:126px;padding:8px 2px 2px}
-  .pcard{width:86px;height:120px}
+  .hand{min-height:138px;padding:8px 2px 2px}
+  .pcard{width:86px;height:132px}
   .pcard:hover{transform:none}
   .pcard.selected{transform:translateY(-8px)}
   .action-bar{min-height:0;gap:7px}
@@ -1604,9 +1657,9 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   }
   .dlist > .dim{flex:0 0 150px;min-height:64px;flex-direction:row}
   .dchip{flex:0 0 auto}
-  .pcard{width:80px;height:112px;padding:8px}
+  .pcard{width:80px;height:124px;padding:8px}
   .pc-name{font-size:11.5px}
-  .pc-glyph{font-size:28px;top:22px;right:6px}
+  .pc-art{width:26px;height:26px;margin-top:0}
   .dchip{width:100px;min-width:100px;height:64px}
   .dstack.multi > .dchip.spine{height:64px}
   .tray-label{flex-basis:28px;font-size:8px}
@@ -1639,8 +1692,8 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
   .hud{height:46px}
   .mybar{padding:7px 12px 9px;gap:6px}
   .hand{min-height:106px}
-  .pcard{width:82px;height:112px}
-  .pc-glyph{font-size:28px;top:22px}
+  .pcard{width:82px;height:124px}
+  .pc-art{width:24px;height:24px;margin-top:0}
   .pc-name{font-size:11.5px}
   .tray{flex-basis:240px}
   .dchip{height:64px}
@@ -1657,13 +1710,19 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
     animation-duration:1ms!important;animation-iteration-count:1!important;
     transition-duration:1ms!important;scroll-behavior:auto!important;
   }
-  .spinner{animation-duration:.8s!important;animation-iteration-count:infinite!important}
+  .spinner{animation:spin .8s linear infinite!important}
 }
 body.no-motion *,body.no-motion *::before,body.no-motion *::after{
   animation-duration:1ms!important;animation-iteration-count:1!important;
   transition-duration:1ms!important;scroll-behavior:auto!important;
 }
-body.no-motion .spinner{animation-duration:.8s!important;animation-iteration-count:infinite!important}
+body.no-motion .spinner{animation:spin .8s linear infinite!important}
+
+/* paintModal 用 .no-anim 阻止弹窗重复播入场动画，但广播等待弹窗里的 spinner
+   是「还在等」的唯一指示，不能被顺带掐掉。animation:none 是简写，会把
+   animation-name 一起清成 none，只补 duration 救不回来，必须整条重写。
+   这一段放在最后，压过前面所有减少动效的规则；各端共用同一份 style.css。 */
+.no-anim .spinner{animation:spin .85s linear infinite!important}
 
 /* 滚动条（桌面端） */
 ::-webkit-scrollbar{width:8px;height:8px}

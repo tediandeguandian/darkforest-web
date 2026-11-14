@@ -38,7 +38,7 @@ w.eval(fs.readFileSync(path.join(ROOT, 'shared/view.js'), 'utf8'));
 w.eval(`var Net = {
   view: null, room: null, me: { playerId: 'p0' }, roomId: null, local: true, canLan: false, spectating: false,
   __h: [],
-  on(fn){ this.__h.push(fn); }, act(){}, leave(){}, setMode(){}, setStrikeTarget(){}, addAI(){}, removeAI(){}, start(){}, watch(){},
+  on(fn){ this.__h.push(fn); }, act(){}, leave(){}, setMode(){}, setStrikeTarget(){}, addAI(){}, removeAI(){}, start(){}, watch(){}, createRoom(){}, joinRoom(){},
   name(){ return ''; }, setName(){}, autoResume(){ return false; }, hasSession(){ return false; }, lanUrl(){ return null; }
 };`);
 w.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
@@ -50,6 +50,9 @@ w.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
   window.__syncAIFoldWide = syncAIFoldWide;
   window.__cardArt = cardArt;
   window.__CARD_GLYPHS = CARD_GLYPHS;
+  window.__renderEntry = renderEntry;
+  window.__readName = readName;
+  window.__writeName = writeName;
 `);
 
 function show(view, pid) {
@@ -451,6 +454,144 @@ console.log('=== UI 6b. 大厅局部更新：加人机不重建、菜单不被�
   ok(!w.__lastFetch, '网页版不该请求任何更新清单');
   ok(!w.document.querySelector('#updateBadge'), '网页版不该出现更新提示');
 
+  /* ---------- 9d. macOS 应用内更新：下载 → 安装 → 重启 ----------
+   * 1.0.30 起 macOS 不再把 dmg 丢给浏览器等人自己拖：自己下载、挂载、换 .app。
+   * 这里用一个假的 __TAURI_INTERNALS__ 把整条状态机走一遍。 */
+  console.log('=== UI 9d. macOS 应用内更新（下载 / 安装 / 重启）===');
+  const pkgBytes = 5885413;
+  w.eval(`window.DF_DESKTOP = 1; window.DF_VERSION = '1.0.29';
+    window.DF_SERVER = 'https://darkforest.dpdns.org';
+    delete window.DF_APP; delete window.Android;
+    window.__opened = [];
+    window.open = u => { window.__opened.push(u); return {}; };
+    Object.defineProperty(navigator, 'userAgent', {
+      value: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15', configurable: true });
+    window.fetch = () => Promise.resolve({ ok: true, json: () => Promise.resolve({
+      version: '1.0.30',
+      platforms: {
+        mac: { url: '/download/dark-forest-1.0.30-macos-universal.dmg', bytes: ${pkgBytes},
+               file: '黑暗森林-v1.0.30-macos.dmg',
+               sub: 'v1.0.30 · 5.6 MB · 通用二进制（Intel / Apple 芯片）' },
+        win: { url: '/download/dark-forest-1.0.30-tauri-setup.exe', bytes: 1771746, sub: 'v1.0.30 · 1.7 MB' }
+      },
+      history: { '1.0.30': ['macOS 版改为应用内下载与安装'] }
+    }) });
+    window.__calls = [];
+    window.__state = { phase: 'idle', got: 0, total: 0, msg: '' };
+    window.__TAURI_INTERNALS__ = { invoke: (cmd, args) => {
+      window.__calls.push([cmd, args || {}]);
+      if (cmd === 'df_update_caps') return Promise.resolve({ platform: 'macos', mode: 'inapp',
+        app: '/Applications/黑暗森林.app', writable: true, note: '' });
+      if (cmd === 'df_update_start') {
+        window.__state = { phase: 'downloading', got: 0, total: args.total, msg: '' };
+        return Promise.resolve();
+      }
+      if (cmd === 'df_update_state') return Promise.resolve(Object.assign({}, window.__state));
+      if (cmd === 'df_update_install') {
+        window.__state = { phase: 'installed', got: ${pkgBytes}, total: ${pkgBytes}, msg: '' };
+        return Promise.resolve();
+      }
+      if (cmd === 'df_update_relaunch') { window.__relaunched = true; return Promise.resolve(); }
+      return Promise.resolve();
+    } };`);
+  w.__render();
+  await new Promise(r => setTimeout(r, 10));
+
+  const mbadge = w.document.querySelector('#updateBadge');
+  ok(!!mbadge, 'macOS 桌面版有新版本时应有提示');
+  mbadge && mbadge.click();
+  const mud = w.document.querySelector('#updateDialog');
+  const mhtml = mud ? mud.innerHTML : '';
+  ok(mhtml.indexOf('下载并安装') >= 0, '支持应用内更新时按钮应为「下载并安装」，实际没有');
+  ok(mhtml.indexOf('前往下载') < 0, 'macOS 支持应用内更新时不该再让人自己去下载');
+  ok(mhtml.indexOf('下载与安装都在应用内完成') >= 0, '要说明这一步是在应用内完成的');
+  ok((w.__opened || []).length === 0, '只是打开弹窗，不该先开浏览器');
+
+  mud && mud.querySelector('[data-ok]').click();
+  await new Promise(r => setTimeout(r, 10));
+  ok(!!w.document.querySelector('#updatePanel'), '点「下载并安装」应出现进度面板');
+  const startCall = (w.__calls || []).find(c => c[0] === 'df_update_start');
+  ok(!!startCall, '应调用原生下载（df_update_start）');
+  ok(!!startCall && startCall[1].url === 'https://darkforest.dpdns.org/download/dark-forest-1.0.30-macos-universal.dmg',
+    '清单里的相对路径要拼成绝对地址，实际 ' + (startCall && startCall[1].url));
+  ok(!!startCall && startCall[1].total === pkgBytes, '要把清单里的体积传下去，用来算百分比');
+
+  // 下载到三分之一：进度条和徽标都得跟上
+  w.eval(`window.__state = { phase: 'downloading', got: 2000000, total: ${pkgBytes}, msg: '' };`);
+  await new Promise(r => setTimeout(r, 260));
+  const fill = w.document.querySelector('#updatePanel .up-fill');
+  ok(!!fill && /width:\s*3\d%/.test(fill.getAttribute('style') || ''),
+    '进度条宽度应跟着已下载字节走，实际 ' + (fill && fill.getAttribute('style')));
+  const mb2 = w.document.querySelector('#updateBadge');
+  ok(!!mb2 && /3\d%/.test(mb2.textContent || ''), '徽标上也要能看到百分比，实际 ' + (mb2 && mb2.textContent));
+
+  // 下载完成 → 自动进安装，不需要再点一次
+  w.eval(`window.__state = { phase: 'downloaded', got: ${pkgBytes}, total: ${pkgBytes}, msg: '' };`);
+  await new Promise(r => setTimeout(r, 260));
+  ok(!!(w.__calls || []).find(c => c[0] === 'df_update_install'), '下载完应自动安装（df_update_install）');
+  await new Promise(r => setTimeout(r, 20));
+  const doneHtml = (w.document.querySelector('#updatePanel') || {}).innerHTML || '';
+  ok(doneHtml.indexOf('更新完成') >= 0, '装好后应提示更新完成');
+  ok(doneHtml.indexOf('立即重启') >= 0, '重启时机交给用户：对局可能还没打完');
+  ok(!w.document.querySelector('#updateBadge'), '装好后徽标应收起，别再勾着人');
+
+  w.document.querySelector('#updatePanel [data-restart]')?.click();
+  await new Promise(r => setTimeout(r, 10));
+  ok(w.__relaunched === true, '点「立即重启」应调用 df_update_relaunch');
+
+  /* ---------- 9e. 应用内更新失败：必须留一条浏览器退路 ---------- */
+  console.log('=== UI 9e. 应用内更新失败：留一条浏览器下载的退路 ===');
+  w.document.getElementById('updatePanel')?.remove();
+  w.document.getElementById('updateDialog')?.remove();
+  w.eval(`window.__UI.update = null; window.__opened = [];
+    window.__TAURI_INTERNALS__.invoke = (cmd, args) => {
+      window.__calls.push([cmd, args || {}]);
+      if (cmd === 'df_update_caps') return Promise.resolve({ platform: 'macos', mode: 'inapp',
+        app: '/Applications/黑暗森林.app', writable: true, note: '' });
+      if (cmd === 'df_update_start') return Promise.reject('没有写入「应用程序」的权限');
+      return Promise.resolve({ phase: 'idle', got: 0, total: 0, msg: '' });
+    };`);
+  w.__render();
+  await new Promise(r => setTimeout(r, 10));
+  w.document.querySelector('#updateBadge')?.click();
+  w.document.querySelector('#updateDialog [data-ok]')?.click();
+  await new Promise(r => setTimeout(r, 20));
+  const failHtml = (w.document.querySelector('#updatePanel') || {}).innerHTML || '';
+  ok(failHtml.indexOf('更新没能完成') >= 0, '失败要有明确的标题，不能只是静默');
+  ok(failHtml.indexOf('没有写入「应用程序」的权限') >= 0, '要把原生给的失败原因原样告诉用户');
+  ok(failHtml.indexOf('改用浏览器下载') >= 0, '失败后必须留一条浏览器下载的退路');
+  w.document.querySelector('#updatePanel [data-browser]')?.click();
+  await new Promise(r => setTimeout(r, 10));
+  /* 壳里 openExternal 优先走 opener 插件（原生开浏览器），没有插件才退回 window.open，
+     两种都算"交出去了"——真机上第一种更可靠。 */
+  const openerCall = (w.__calls || []).find(c => c[0] === 'plugin:opener|open_url');
+  ok((w.__opened || []).length + (openerCall ? 1 : 0) === 1,
+    '点「改用浏览器下载」应打开一次下载页，实际 ' + (w.__opened || []).length);
+  ok(!openerCall || /dark-forest-1\.0\.30-macos-universal\.dmg$/.test(openerCall[1].url || ''),
+    '交给浏览器的应是 dmg 的绝对地址，实际 ' + (openerCall && openerCall[1].url));
+
+  /* ---------- 9f. 装不了的时候：说清原因，按钮退回「前往下载」 ---------- */
+  console.log('=== UI 9f. 从只读镜像里运行：说清原因并退回浏览器 ===');
+  w.document.getElementById('updatePanel')?.remove();
+  w.document.getElementById('updateDialog')?.remove();
+  w.document.getElementById('updateBadge')?.remove();
+  w.eval(`window.__UI.update = null; window.__opened = [];
+    window.__TAURI_INTERNALS__.invoke = (cmd) => {
+      window.__calls.push([cmd, {}]);
+      if (cmd === 'df_update_caps') return Promise.resolve({ platform: 'macos', mode: 'browser',
+        app: '/Volumes/黑暗森林/黑暗森林.app', writable: false,
+        note: '当前是从只读的安装镜像里运行的，先把「黑暗森林」拖进「应用程序」再回来更新' });
+      return Promise.resolve();
+    };`);
+  w.__render();
+  await new Promise(r => setTimeout(r, 10));
+  w.document.querySelector('#updateBadge')?.click();
+  const roHtml = (w.document.querySelector('#updateDialog') || {}).innerHTML || '';
+  ok(roHtml.indexOf('前往下载') >= 0, '装不了时按钮应退回「前往下载」');
+  ok(roHtml.indexOf('只读的安装镜像') >= 0, '要把「为什么装不了」讲清楚，别让人对着灰按钮猜');
+  w.document.getElementById('updateDialog')?.remove();
+  w.eval(`delete window.__TAURI_INTERNALS__;`);
+
   // 恢复成第 9 节的安卓壳状态，后面的用例还要用
   w.eval(`window.DF_APP = 1; window.DF_VERSION = '1.0.0'; delete window.DF_DESKTOP;
     window.Android = { downloadApk: () => '{"ok":true}', installDownloaded: () => '{"ok":false}',
@@ -546,7 +687,7 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   ok(bar.indexOf('光粒') < 0 && bar.indexOf('热核') < 0, '不该列出牌库里有哪些牌');
   ok(w.document.querySelectorAll('#counterBar .cnt').length === 0, '记牌器小方块应全部移除');
 
-  console.log('=== UI 13. 入口设置：改名 + 毛玻璃 ===');
+  console.log('=== UI 13. 入口设置：毛玻璃选项已移除，只剩动效 ===');
   w.Net.view = null;
   w.Net.room = null;
   w.Net.setName = v => { w.__savedName = v; };
@@ -557,44 +698,35 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   ok(!!w.document.querySelector('#prefBtn'), '入口页应有设置按钮');
   w.document.querySelector('#prefBtn').click();
   const pbox = w.document.querySelector('#prefModal');
-  ok(!!pm, '点设置应弹出面板');
+  ok(!!pbox, '点设置应弹出面板');
   const pmHtml = pbox ? pbox.innerHTML : '';
+  ok(pmHtml.indexOf('毛玻璃') < 0, '设置里不应再出现毛玻璃字样');
+  ok(pmHtml.indexOf('浓度') < 0, '设置里不应再出现浓度');
+  ok(!pbox.querySelector('#prefFrost'), '不应再有毛玻璃开关');
+  ok(!pbox.querySelector('#prefLevel'), '不应再有浓度滑杆');
+  ok(!pbox.querySelector('#prefVal'), '不应再有浓度数值');
+  ok(!!pbox.querySelector('#prefMotion'), '动效开关应保留');
   ok(pmHtml.indexOf('名字') < 0, '设置里不再有名字编辑（名字只在入口页输入）');
-  ok(pmHtml.indexOf('毛玻璃') >= 0, '面板里应有毛玻璃开关');
-  ok(!!(pbox && pbox.querySelector('#prefLevel')), '应有浓度滑杆');
 
-  // 默认开，并且真的把变量写到 body 上
-  ok(w.document.body.classList.contains('frost'), '毛玻璃默认开启');
+  // 毛玻璃固定一档，不受任何开关影响
+  ok(w.document.body.classList.contains('frost'), '毛玻璃应固定开启');
   const a0 = parseFloat(w.document.body.style.getPropertyValue('--frost-a') || '0');
-  ok(a0 > 0, '应写入 --frost-a，实际 ' + a0);
-  // 默认浓度 0%（滑杆最左）→ 映射到区间下界 0.40，要"看得出是玻璃"又不压字
-  ok(Math.abs(a0 - 0.40) < 0.001, '默认浓度应为 0%（--frost-a = 0.40），实际 ' + a0);
-  ok(/px$/.test(w.document.body.style.getPropertyValue('--frost-blur')), '应写入 --frost-blur');
+  ok(Math.abs(a0 - 0.78) < 0.001, '固定不透明度应为 0.78，实际 ' + a0);
+  ok(/px$/.test(w.document.body.style.getPropertyValue('--frost-blur')), '应写入固定模糊半径');
 
-  // 拉高浓度 → 面板更不透明（模糊也跟着变强）
-  const range = pbox.querySelector('#prefLevel');
-  range.value = '95';
-  range.dispatchEvent(new w.Event('input', { bubbles: true }));
-  const a1 = parseFloat(w.document.body.style.getPropertyValue('--frost-a') || '0');
-  ok(a1 > a0, '浓度调高后不透明度应变大（' + a0 + ' → ' + a1 + '）');
-  ok(pbox.querySelector('#prefVal').textContent === '95%', '应显示当前浓度百分比');
-
-  // 关掉
-  pbox.querySelector('#prefFrost').click();
-  ok(!w.document.body.classList.contains('frost'), '关掉后应移除 frost 类');
-  const saved = JSON.parse(w.localStorage.getItem('df_ui_pref') || '{}');
-  ok(saved.frost === false, '开关状态应落盘');
-  ok(!!(pbox.querySelector('#prefLevel').disabled), '关掉后浓度滑杆应变灰');
-
-  // 名字编辑已从设置里去掉（名字只在入口页输入）
+  // 动效开关只管 no-motion，不能再关掉毛玻璃
+  pbox.querySelector('#prefMotion').click();
+  ok(w.document.body.classList.contains('no-motion'), '关动效应加 no-motion 类');
+  ok(w.document.body.classList.contains('frost'), '关动效不应关掉毛玻璃');
+  const saved13 = JSON.parse(w.localStorage.getItem('df_ui_pref') || '{}');
+  ok(saved13.motion === false, '动效状态应落盘');
+  ok(!('frost' in saved13) && !('level' in saved13), '落盘数据里不应再有 frost / level');
   ok(!pbox.querySelector('#prefName'), '设置里不应再有名字输入框');
   ok(!pbox.querySelector('#prefNameSave'), '设置里不应再有名字保存按钮');
-  ok(pbox.innerHTML.indexOf('名字') < 0, '设置面板不应出现「名字」字样');
 
   pbox.remove();
-  w.applyUiPref({ frost: true, level: 0.55 });
+  w.applyUiPref({ motion: true });
 
-  // 样式表里必须有这两条，否则开关点了没效果
   const css13 = fs.readFileSync(path.join(ROOT, 'web/style.css'), 'utf8');
   ok(/body\.frost\{/.test(css13), '应有 body.frost 的变量覆盖');
   ok(/body\.frost\s+\.hud/.test(css13), '大面板应加 backdrop-filter');
@@ -613,31 +745,25 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   dd && dd.querySelector('[data-close]').click();
   ok(!w.document.querySelector('#appDialog'), '点「继续玩」应关闭');
 
-  console.log('=== UI 15. 对局内也能调毛玻璃，与入口同一套 ===');
-  w.applyUiPref({ frost: true, level: 0.45 });
+  console.log('=== UI 15. 对局内设置与入口同一套（同样没有毛玻璃选项）===');
+  w.applyUiPref({ motion: true });
   show(viewFor(g, 'p1'), 'p1');
   ok(!!w.document.querySelector('#prefBtnGame'), '对局顶栏应有设置齿轮');
   ok(w.document.body.classList.contains('in-game') && w.document.body.classList.contains('frost'),
-    '对局里毛玻璃应继续生效');
+    '对局里毛玻璃应固定生效');
 
   const a5 = parseFloat(w.document.body.style.getPropertyValue('--frost-a') || '0');
   w.document.querySelector('#prefBtnGame').click();
   const pm5 = w.document.querySelector('#prefModal');
   ok(!!pm5, '对局里点齿轮应打开同一套设置');
-  ok(!!(pm5 && pm5.querySelector('#prefLevel')), '对局里的设置也带浓度滑杆');
-
-  const r5 = pm5.querySelector('#prefLevel');
-  r5.value = '5';
-  r5.dispatchEvent(new w.Event('input', { bubbles: true }));
+  ok(!pm5.querySelector('#prefLevel') && !pm5.querySelector('#prefFrost'),
+    '对局里的设置也不该有毛玻璃开关 / 浓度滑杆');
+  pm5.querySelector('#prefMotion').click();
   const a6 = parseFloat(w.document.body.style.getPropertyValue('--frost-a') || '0');
-  ok(a6 < a5, '调低浓度应立即变透（' + a5 + ' → ' + a6 + '）');
+  ok(Math.abs(a6 - a5) < 0.001, '关动效不该改变毛玻璃浓度（' + a5 + ' → ' + a6 + '）');
   ok(w.document.body.classList.contains('in-game'), '改设置不该把对局状态弄丢');
-
-  pm5.querySelector('#prefFrost').click();
-  ok(!w.document.body.classList.contains('frost') && w.document.body.classList.contains('in-game'),
-    '关掉毛玻璃后仍在对局里（只是面板回到实色）');
   pm5.remove();
-  w.applyUiPref({ frost: true, level: 0.45 });
+  w.applyUiPref({ motion: true });
 
   console.log('=== UI 16. 入口页下载入口：聚合成一个「下载客户端」按钮 ===');
   // 第 9 节设过 window.DF_APP（模拟安卓壳），入口函数会因此整块跳过——先删掉
@@ -923,6 +1049,9 @@ console.log('=== UI 10. 对局中换星空背景 ===');
     await new Promise(r => setTimeout(r, 20));
     const m1 = w.document.querySelector('#modalRoot .modal');
     ok(!!m1, '应弹出广播响应弹窗');
+    const desc19b = w.document.querySelector('#modalRoot .modal p.dim').textContent;
+    ok(/广播/.test(desc19b), '弹窗描述应说明是广播：' + desc19b);
+    ok(!/恒星|宇宙|超距|合作|伪装/.test(desc19b), '弹窗描述不能暴露发布者用的哪一档：' + desc19b);
     ok(!w.document.querySelector('#app #modalRoot'), '弹窗容器不该放在 #app 内（会被整块重绘带走）');
     ok(!w.document.getElementById('modalRoot').classList.contains('no-anim'), '首次挂载应播入场动画');
 
@@ -1209,15 +1338,38 @@ console.log('=== UI 10. 对局中换星空背景 ===');
   }
 
   console.log('=== UI 28. 每张卡牌都有自己的矢量图 ===');
-/* 「符合名称」是个可以回归的约束：22 个 key 一个不能少，且两两不同。
-   曾经手牌只用一个汉字水印（广/击/建），按类型共用，看不出是哪张牌。 */
+/* 20 个 key 一个不能少。广播只按射程分档：同一档的合作/伪装共用一张图，
+   所以「两两不同」只对广播之外的牌成立，广播内部按档位分组校验。 */
 const allKeys = Object.keys(w.CARD_DEFS);
 const missArt = allKeys.filter(k => !w.__CARD_GLYPHS[k]);
 ok(missArt.length === 0, '每个卡牌 key 都要有图标，缺：' + missArt.join(','));
 const artList = allKeys.map(k => w.__CARD_GLYPHS[k]);
-ok(new Set(artList).size === allKeys.length,
-  `图标应两两不同（当前 ${new Set(artList).size}/${allKeys.length} 个不重复）`);
 ok(artList.every(a => /<(path|circle|rect|ellipse|line)\b/.test(a || '')), '每个图标都要有实际图形，不能是空串');
+
+const bc = ['star', 'cosmic', 'ftl'];
+for (const f of bc) {
+  ok(w.__CARD_GLYPHS[f + '_coop'] === w.__CARD_GLYPHS[f + '_disg'],
+    f + ' 的合作与伪装必须共用同一张图（图标不表达真假）');
+  ok(!/<rect\b/.test(w.__CARD_GLYPHS[f + '_coop']), f + ' 图标不应再画右侧目标方块');
+}
+ok(new Set(bc.map(f => w.__CARD_GLYPHS[f + '_coop'])).size === 3,
+  '恒星 / 宇宙 / 超距三档图标必须互不相同');
+const others = allKeys.filter(k => !/^(star|cosmic|ftl)_(coop|disg)$/.test(k));
+ok(new Set(others.map(k => w.__CARD_GLYPHS[k])).size === others.length,
+  '广播之外的图标仍应两两不同');
+
+/* 广播脱敏：六张广播牌对外必须是同一个 key、同一个名字。
+   以前三档各有 hidden 占位，图标还画 1/2/3 格信号，等于把射程画在脸上。 */
+const bkeys = ['star_coop', 'star_disg', 'cosmic_coop', 'cosmic_disg', 'ftl_coop', 'ftl_disg'];
+ok(new Set(bkeys.map(w.hideFace)).size === 1, '六张广播牌对外必须是同一个 key');
+ok(w.hideFace('ftl_coop') === 'broadcast_hidden', '对外占位应统一为 broadcast_hidden');
+ok(new Set(bkeys.map(w.familyName)).size === 1, '六张广播牌对外必须是同一个名字');
+ok(!/恒星|宇宙|超距/.test(w.familyName('ftl_coop')), '对外名字不能带档位');
+ok(!!w.CARD_DEFS['broadcast_hidden'] && !w.CARD_DEFS['star_hidden'] && !w.CARD_DEFS['ftl_hidden'],
+  '只保留一个通用占位，分档占位必须删掉');
+ok(!!w.__CARD_GLYPHS['broadcast_hidden'], '统一占位要有自己的图标');
+ok(!/y="38"/.test(w.__CARD_GLYPHS['broadcast_hidden']), '占位图标不能画信号格（会泄露档位）');
+ok(w.__cardArt('star_hidden') === '' && w.__cardArt('ftl_hidden') === '', '旧分档占位不应再画出图');
 
 const shell28 = w.__cardArt('solar');
 ok(shell28.indexOf('<svg') === 0 && shell28.indexOf('class="card-art-svg"') > 0, 'cardArt 应返回统一样式的 svg');
@@ -1260,6 +1412,49 @@ const sm28 = w.document.querySelector('#stackModal .sm-art svg');
 ok(!!sm28, '弃牌摞展开的详情卡要带图标');
 const modal28 = w.document.getElementById('stackModal');
 if (modal28) modal28.remove();
+
+console.log('=== UI 29. 本地页与联机页共用同一个玩家名字 ===');
+{
+  const oldName = w.Net.name, oldSet = w.Net.setName, oldLocal = w.Net.local, oldView = w.Net.view;
+  w.eval(`try { localStorage.removeItem('df_name'); } catch (e) {}`);
+  // 模拟本地壳：老 local.js / net-lan.js 的 name() / setName() 是空实现
+  w.Net.name = () => '';
+  w.Net.setName = () => {};
+  w.Net.local = true;
+  w.Net.view = null;
+  w.__UI.gate = null; w.__UI.turnKey = null;
+  w.__renderEntry();
+  const input = w.document.querySelector('#myname');
+  ok(!!input, '本地入口应有名字输入框');
+  input.value = '星舰地球';
+  w.document.querySelector('#createBtn').click();
+  ok(w.localStorage.getItem('df_name') === '星舰地球',
+    '本地改名应落到 df_name，实际 ' + w.localStorage.getItem('df_name'));
+  w.__renderEntry();
+  ok(w.document.querySelector('#myname').value === '星舰地球', '重新进入本地页应读回同一个名字');
+  // 切到联机壳（Net.name 读 df_name）：名字必须一致
+  w.Net.name = () => w.localStorage.getItem('df_name') || '';
+  w.__renderEntry();
+  ok(w.document.querySelector('#myname').value === '星舰地球', '联机入口应读到同一个名字');
+  w.Net.name = oldName; w.Net.setName = oldSet; w.Net.local = oldLocal; w.Net.view = oldView;
+  w.eval(`try { localStorage.removeItem('df_name'); } catch (e) {}`);
+}
+
+console.log('=== UI 30. 加载圆圈在各端都不该被掐掉 ===');
+{
+  const css30 = fs.readFileSync(path.join(ROOT, 'web/style.css'), 'utf8');
+  ok(/@keyframes spin\{/.test(css30), '应定义 spin 关键帧');
+  ok(/\.no-anim \.spinner\{animation:spin [^}]*infinite!important\}/.test(css30),
+    '弹窗重绘带上 .no-anim 后 spinner 仍要转（mac 本地对局就是卡在这里）');
+  ok(/body\.no-motion \.spinner\{animation:spin/.test(css30), '关掉本机动效时 spinner 仍要转');
+  ok(/@media \(prefers-reduced-motion:reduce\)\{[\s\S]*?\.spinner\{animation:spin/.test(css30),
+    'macOS 系统「减少动态效果」下 spinner 仍要转');
+  // 其他客户端都从 web/style.css 拷贝，检查打包脚本没有漏
+  for (const f of ['tools/prep-frontend.sh', 'apk/build.sh', 'desktop/build-win.sh', 'worker/build.sh']) {
+    const t = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    ok(/style\.css|\.\.\/web/.test(t), f + ' 应把 web/style.css 带进产物');
+  }
+}
 
 console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);

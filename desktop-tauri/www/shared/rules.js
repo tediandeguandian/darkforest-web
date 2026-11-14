@@ -15,9 +15,7 @@
   const { INF, CARD_DEFS, GALAXY_NAMES, ADJACENCY, galaxyDistance, buildDeck } = C;
   // 拆除返还：老版本 cards.js 没有这个函数时退回同一套取整规则
   const demolishRefund = C.demolishRefund || (k => (CARD_DEFS[k] ? Math.floor(CARD_DEFS[k].cost / 2) : 0));
-  // 广播牌在结算前不对外暴露合作/伪装
-  const hideFace = C.hideFace || (k => k);
-  const familyName = C.familyName || (k => (CARD_DEFS[k] ? CARD_DEFS[k].name : k));
+  // 广播对外只有「广播」两个字：射程档位与正反面都在结算翻面前保密
 
   /* 回合上限：到这个回合还没分出胜负就按能量收局（人类局也要有兜底，不能只靠 AI 自己收手） */
   const MAX_TURNS = 240;
@@ -430,15 +428,13 @@
         chooseDeadline: null,
       };
 
-      // 只公布「谁朝哪儿发了哪种广播」，不公布合作/伪装——那一面结算时才翻。
-      // ⚠️ 更不能公布**实际距离**（发布者到目标星系的真实格数）：
-      //    目标星系是公开的，距离一公布，发布者的位置就等于公开了。
-      //    公开的只有「这张牌的射程」——即「发布者在目标星系 N 格以内」，
-      //    这正是观察者本来就能推出来的约束（见设计文档 2.4.1）。
-      const radius = def.dist === INF ? null : def.dist;
-      const rangeText = radius === null ? '任意星系' : `距目标 ≤ ${radius} 格`;
-      log(`${p.name} 发布「${familyName(card.key)}」→ ${GALAXY_NAMES[targetGalaxy]}（${rangeText}）`, 'broadcast');
-      ev('broadcast_cast', { actor: p.id, family: hideFace(card.key), target: targetGalaxy, radius });
+      // 对外只有三件事：谁、朝哪个星系、发了个广播。
+      // 恒星 / 宇宙 / 超距（射程）、合作 / 伪装（正反面）一律不写进战报和事件：
+      //   目标星系是公开的，一旦给出射程，就等于把「发布者离目标 ≤ N 格」也公开了，
+      //   对手能据此缩小他的坐标范围；实际距离当然更不能写。
+      // 发布者自己仍能从视图的 broadcast.card 看到真实 key（自己出的牌自己知道）。
+      log(`${p.name} 发布了广播 → ${GALAXY_NAMES[targetGalaxy]}`, 'broadcast');
+      ev('broadcast_cast', { actor: p.id, target: targetGalaxy });
       S.broadcastsThisTurn = (S.broadcastsThisTurn || 0) + 1;
       markActed();
       return { ok: true };

@@ -67,15 +67,14 @@
   --ease-out:cubic-bezier(.16,1,.3,1);
   --dur-1:160ms; --dur-2:220ms; --dur-3:300ms;
 
-  /* 面板底色：毛玻璃关闭时是实色，打开后由 body.frost 换成 --frost-a */
+  /* 面板底色：body.frost 固定开启，由 applyUiPref 写入 --frost-a */
   --panel-a:.92;
   --glass:rgba(18,23,33,var(--panel-a));
   --glass-2:rgba(26,33,48,var(--panel-a));
   --blur:0px;
 }
 
-/* 毛玻璃：0.40 → 0.95，由设置面板实时写 --frost-a。
-   关闭时 --blur 为 0，所有 backdrop-filter 等于没开，面板就是实色。 */
+/* 毛玻璃固定一档：由 applyUiPref 写入 --frost-a / --frost-blur，不再提供开关与浓度。 */
 body.frost{ --panel-a:var(--frost-a,.78); --blur:var(--frost-blur,14px) }
 body.frost .hud,
 body.frost .mybar,
@@ -1177,6 +1176,37 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
 }
 .dlg-ver:last-child{border-bottom:0}
 .dlg-verline{font-family:ui-monospace,monospace;font-size:11px;color:var(--faint)}
+
+/* ---- 应用内更新（下载 / 安装 / 完成 / 失败） ----
+   一条进度条承担全部反馈：宽度就是真实百分比，不做假的"无限来回"。
+   只有安装那一步（外部命令在跑、拿不到进度）才切成流动条纹。 */
+.up-dlg{max-width:420px}
+.up-track{
+  position:relative;height:8px;margin:14px 0 8px;
+  border-radius:5px;background:rgba(8,11,17,.72);
+  border:1px solid var(--hair);overflow:hidden;
+}
+.up-fill{
+  height:100%;width:0;border-radius:4px;
+  background:linear-gradient(90deg,rgba(232,180,95,.55),var(--gold));
+  box-shadow:0 0 10px rgba(232,180,95,.35);
+  transition:width .22s var(--ease);
+}
+.up-track.is-busy .up-fill{
+  background:repeating-linear-gradient(90deg,var(--gold) 0 9px,rgba(232,180,95,.35) 9px 18px);
+  background-size:18px 100%;
+  animation:upStripe .65s linear infinite;
+}
+.up-track.is-done .up-fill{
+  background:linear-gradient(90deg,rgba(99,191,144,.55),var(--green));
+  box-shadow:0 0 10px rgba(99,191,144,.3);
+}
+.up-meta{
+  display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;
+}
+.up-err{color:var(--red);word-break:break-word}
+@keyframes upStripe{to{background-position:18px 0}}
 .dlg-list{display:flex;flex-direction:column;gap:6px;margin:12px 0}
 .dl-item{
   display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r-s);
@@ -1680,13 +1710,19 @@ button.strike-chip:focus-visible{outline:2px solid var(--red);outline-offset:2px
     animation-duration:1ms!important;animation-iteration-count:1!important;
     transition-duration:1ms!important;scroll-behavior:auto!important;
   }
-  .spinner{animation-duration:.8s!important;animation-iteration-count:infinite!important}
+  .spinner{animation:spin .8s linear infinite!important}
 }
 body.no-motion *,body.no-motion *::before,body.no-motion *::after{
   animation-duration:1ms!important;animation-iteration-count:1!important;
   transition-duration:1ms!important;scroll-behavior:auto!important;
 }
-body.no-motion .spinner{animation-duration:.8s!important;animation-iteration-count:infinite!important}
+body.no-motion .spinner{animation:spin .8s linear infinite!important}
+
+/* paintModal 用 .no-anim 阻止弹窗重复播入场动画，但广播等待弹窗里的 spinner
+   是「还在等」的唯一指示，不能被顺带掐掉。animation:none 是简写，会把
+   animation-name 一起清成 none，只补 duration 救不回来，必须整条重写。
+   这一段放在最后，压过前面所有减少动效的规则；各端共用同一份 style.css。 */
+.no-anim .spinner{animation:spin .85s linear infinite!important}
 
 /* 滚动条（桌面端） */
 ::-webkit-scrollbar{width:8px;height:8px}

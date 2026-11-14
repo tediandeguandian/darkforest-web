@@ -10,49 +10,50 @@
  * 建设绿 / 广播青 / 打击红），这里只存图形片段，外壳由 cardArt() 补齐。
  * 刻意放进 ui.js 而不是新建 .js：各端打包脚本（apk / win / prep / worker）
  * 是逐个 cp 固定文件名，新增文件得同时改 4 个脚本 + 4 个 HTML，不值当。
- * 广播的"合作 / 伪装 / 未翻面"是三个不同的 key，也各有独立图案。
+ * 对外未翻面的广播只有一个统一 key / 图案：不能让人看出是哪一档。
  * ============================================================ */
 const CARD_GLYPHS = {
-  /* ---- 恒星广播：实心恒星向外发波。合作=双侧对称；伪装=单侧虚线（信号残缺） ---- */
-  star_coop: `<circle cx="24" cy="24" r="6.5" fill="currentColor" stroke="none"/>
-    <path d="M13.5 15.5a13 13 0 0 0 0 17M7.5 11a20 20 0 0 0 0 26"/>
-    <path d="M34.5 15.5a13 13 0 0 1 0 17M40.5 11a20 20 0 0 1 0 26"/>`,
-  star_disg: `<circle cx="18" cy="24" r="6.5" fill="currentColor" stroke="none"/>
-    <path d="M28 16a13 13 0 0 1 0 16" stroke-dasharray="4 5"/>
-    <path d="M34.5 11a20 20 0 0 1 0 26" stroke-dasharray="3 7"/>`,
-  star_hidden: `<circle cx="14" cy="15" r="5" fill="currentColor" stroke="none"/>
-    <path d="M26 16a7 7 0 1 1 5.4 6.8c-1.6.7-2 1.8-2 3.4v1.4"/>
-    <circle cx="29.4" cy="35" r="2.2" fill="currentColor" stroke="none"/>`,
+  /* ============================================================
+   * 画的是「这张牌干什么」，不是「名字长什么样」。
+   * 广播三档只按射程区分：左侧波源，向右扩散的弧线数量 = 1 / 2 / 3 档。
+   * 三档共用同一道内弧，逐档往外多一道——弧越靠外，够到的距离越远。
+   *   · 同一档的合作与伪装共用同一张图：图标不表达真假，真假由卡面文字说明
+   *   · 超距多一道竖虚线边界，表示射程不限；右侧不再画目标方块
+   *   · 对外未翻面统一用牌背 + 问号，三档看起来一模一样
+   * ============================================================ */
+  /* 恒星广播（射程 1）：一道波 */
+  star_coop: `<circle cx="12" cy="24" r="5" fill="currentColor" stroke="none"/>
+    <path d="M22 15.5a9 9 0 0 1 0 17"/>`,
+  star_disg: `<circle cx="12" cy="24" r="5" fill="currentColor" stroke="none"/>
+    <path d="M22 15.5a9 9 0 0 1 0 17"/>`,
+  /* 宇宙广播（射程 2）：两道波 */
+  cosmic_coop: `<circle cx="12" cy="24" r="5" fill="currentColor" stroke="none"/>
+    <path d="M22 15.5a9 9 0 0 1 0 17"/>
+    <path d="M22 9.5a15 15 0 0 1 0 29"/>`,
+  cosmic_disg: `<circle cx="12" cy="24" r="5" fill="currentColor" stroke="none"/>
+    <path d="M22 15.5a9 9 0 0 1 0 17"/>
+    <path d="M22 9.5a15 15 0 0 1 0 29"/>`,
+  /* 超距广播（射程无限）：三道波 + 越界的虚线 */
+  ftl_coop: `<circle cx="12" cy="24" r="5" fill="currentColor" stroke="none"/>
+    <path d="M22 15.5a9 9 0 0 1 0 17"/>
+    <path d="M22 9.5a15 15 0 0 1 0 29"/>
+    <path d="M22 3.5a21 21 0 0 1 0 41"/>
+    <path d="M45 3v42" stroke-dasharray="5 6"/>`,
+  ftl_disg: `<circle cx="12" cy="24" r="5" fill="currentColor" stroke="none"/>
+    <path d="M22 15.5a9 9 0 0 1 0 17"/>
+    <path d="M22 9.5a15 15 0 0 1 0 29"/>
+    <path d="M22 3.5a21 21 0 0 1 0 41"/>
+    <path d="M45 3v42" stroke-dasharray="5 6"/>`,
+  /* 对外只有一个「广播」：牌背 + 问号。绝不画信号格——
+     信号格数量会立刻告诉别人这是恒星 / 宇宙 / 超距。 */
+  broadcast_hidden: `<rect x="9" y="5" width="30" height="38" rx="6"/>
+    <path d="M19.6 16.6a6.2 6.2 0 1 1 4.8 6c-1.5.6-2 1.6-2 3v1"/>
+    <circle cx="22.4" cy="30.6" r="2" fill="currentColor" stroke="none"/>`,
 
-  /* ---- 宇宙广播：引力波涟漪。伪装=缺口涟漪 ---- */
-  cosmic_coop: `<circle cx="24" cy="24" r="4.5" fill="currentColor" stroke="none"/>
-    <circle cx="24" cy="24" r="12"/>
-    <circle cx="24" cy="24" r="19.5" stroke-dasharray="6 6"/>`,
-  cosmic_disg: `<circle cx="24" cy="24" r="4.5" fill="currentColor" stroke="none"/>
-    <circle cx="24" cy="24" r="12" stroke-dasharray="14 6"/>
-    <circle cx="24" cy="24" r="19.5" stroke-dasharray="22 9"/>`,
-  cosmic_hidden: `<circle cx="15" cy="15" r="4" fill="currentColor" stroke="none"/>
-    <circle cx="15" cy="15" r="12" stroke-dasharray="5 5"/>
-    <path d="M26 16a7 7 0 1 1 5.4 6.8c-1.6.7-2 1.8-2 3.4v1.4"/>
-    <circle cx="29.4" cy="35" r="2.2" fill="currentColor" stroke="none"/>`,
-
-  /* ---- 超距广播：两张高维膜夹一条投影通道 ---- */
-  ftl_coop: `<path d="M4 13h40M4 35h40"/>
-    <circle cx="15" cy="24" r="6"/><circle cx="33" cy="24" r="6"/>
-    <path d="M21 24h6" stroke-dasharray="2 3"/>`,
-  ftl_disg: `<path d="M4 13h40M4 35h40"/>
-    <circle cx="15" cy="24" r="6"/>
-    <circle cx="33" cy="24" r="6" stroke-dasharray="3 3"/>
-    <path d="M21 24h3M27 24h3" stroke-dasharray="2 4"/>`,
-  ftl_hidden: `<path d="M5 13h14M5 31h14"/>
-    <path d="M26 16a7 7 0 1 1 5.4 6.8c-1.6.7-2 1.8-2 3.4v1.4"/>
-    <circle cx="29.4" cy="35" r="2.2" fill="currentColor" stroke="none"/>`,
-
-  /* ---- 打击 ---- */
-  lock: `<rect x="13" y="21" width="22" height="17" rx="3.5"/>
-    <path d="M18 21v-4.5a6 6 0 0 1 12 0V21"/>
-    <circle cx="24" cy="28" r="2.4" fill="currentColor" stroke="none"/>
-    <path d="M24 30.2V35"/>`,
+  /* ---- 打击：伤害越狠，画面上的"碎"越多 ---- */
+  lock: `<rect x="14" y="10" width="20" height="28" rx="2.5"/>
+    <path d="M14 19h20M14 28h20"/>
+    <path d="M9 7l30 34" stroke-width="3.2"/>`,
   nuke: `<path d="M10 20c0-6 6.3-10.5 14-10.5S38 14 38 20c0 3-2.2 5-5.5 5h-17C12.2 25 10 23 10 20z"/>
     <path d="M20.5 25v7M27.5 25v7"/>
     <path d="M13 32c2 7 6 10 11 10s9-3 11-10"/>`,
@@ -112,9 +113,12 @@ const UI = {
   targetGalaxy: null,
   arrowKey: null,
   apk: null,           // /download/apk.json 的内容（版本 / 体积），拿到过一次就缓存
-  pref: null,          // 界面偏好 { frost, level }：毛玻璃开关与浓度
+  pref: null,          // 界面偏好 { motion }：只剩动效开关
   desktop: null,       // /download/desktop.json：Windows 版下载入口
   updateDownloaded: null,  // 本次会话里已经下好的更新包文件名（再点就走「直接安装」）
+  updateCaps: null,        // 桌面壳的能力：能不能在应用内装（{ mode, platform, app, note }）
+  update: null,            // 应用内更新进度 { phase, got, total, msg, info, pkg }
+  updateTimer: null,       // 轮询原生下载状态的定时器
   energySeq: null,     // 已展示过的最大能量事件 id，用于判重
   strikeSeq: null,     // 已展示过的最大"打击落地"事件 id（隐藏目标模式的落点播报）
   strikeReveal: null,  // { text, sub, until }：落地瞬间的落点横幅
@@ -167,24 +171,19 @@ const GEAR = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke
       <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.11A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.11A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.7a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.11A1.7 1.7 0 0 0 15 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.3 9v.11A1.7 1.7 0 0 0 20.86 10H21a2 2 0 1 1 0 4h-.11A1.7 1.7 0 0 0 19.4 15z"/></svg>`;
 
 /* ============================================================
- * 界面偏好：毛玻璃开关 + 浓度（只影响本机，存 localStorage）
- * 浓度同时驱动两件事——面板的不透明度、背景的模糊半径。
- * 只调其中一个都不像毛玻璃：只降透明度会花，只加模糊会糊成一块。
+ * 界面偏好：只留「动效」开关（只影响本机，存 localStorage）。
+ * 毛玻璃改为固定外观：开关 + 浓度滑杆让每台设备看起来都不一样，
+ * 关掉之后实色面板压在暗色星空上也偏硬，索性固定一档，不再让用户调。
  * ============================================================ */
 const UI_PREF_KEY = 'df_ui_pref';
-const UI_PREF_DEFAULT = { frost: true, level: 0, motion: true };
+const UI_PREF_DEFAULT = { motion: true };
 
 function loadUiPref() {
   try {
     const raw = localStorage.getItem(UI_PREF_KEY);
     if (!raw) return { ...UI_PREF_DEFAULT };
     const o = JSON.parse(raw) || {};
-    const lv = Number(o.level);
-    return {
-      frost: o.frost !== false,
-      level: Number.isFinite(lv) ? Math.min(1, Math.max(0, lv)) : UI_PREF_DEFAULT.level,
-      motion: o.motion !== false,
-    };
+    return { motion: o.motion !== false };   // 老存档里的 frost / level 直接忽略
   } catch (e) {
     return { ...UI_PREF_DEFAULT };   // 隐私模式 / 存储被禁：退回默认，不报错
   }
@@ -198,17 +197,13 @@ function applyUiPref(pref) {
   UI.pref = pref;
   if (typeof document === 'undefined' || !document.body) return;
   const b = document.body;
-  b.classList.toggle('frost', !!pref.frost);
+  b.classList.add('frost');                                  // 毛玻璃固定开启
+  b.style.setProperty('--frost-a', '0.78');
+  b.style.setProperty('--frost-blur', '14px');
   b.classList.toggle('no-motion', pref.motion === false);   // 关掉动效：退化成瞬间完成
-  if (!pref.frost) return;                      // 关掉就走实色面板，变量留着下次用
-  const lv = pref.level;
-  // 面板不透明度 0.40 → 0.95。区间给足，否则牌桌上的变化看不出来
-  // （牌桌底图是星空，本来就很暗，0.7 以上的不透明度和实色几乎没差别）
-  b.style.setProperty('--frost-a', (0.40 + lv * 0.55).toFixed(3));
-  b.style.setProperty('--frost-blur', (6 + lv * 16).toFixed(1) + 'px');  // 6 → 22
 }
 
-/* 入口页的齿轮：改名字 + 毛玻璃开关 + 浓度 */
+/* 入口页 / 对局顶栏的齿轮：只剩动效开关 */
 function openPrefModal() {
   document.getElementById('prefModal')?.remove();
   const pref = { ...(UI.pref || loadUiPref()) };
@@ -223,20 +218,9 @@ function openPrefModal() {
       <div class="set-group">
         <div class="set-label">界面</div>
         <div class="pref-row">
-          <span class="pr-txt">毛玻璃<span>面板半透明、背景虚化；关掉更清楚</span></span>
-          <button class="switch${pref.frost ? ' on' : ''}" id="prefFrost" role="switch"
-            aria-checked="${pref.frost}" title="毛玻璃"></button>
-        </div>
-        <div class="pref-row">
           <span class="pr-txt">动效<span>面板、牌面与提示的过渡；关掉更快</span></span>
           <button class="switch${pref.motion !== false ? ' on' : ''}" id="prefMotion" role="switch"
             aria-checked="${pref.motion !== false}" title="动效"></button>
-        </div>
-        <div class="pref-row"><span class="pr-txt">浓度<span>越高越不透明，也越糊</span></span></div>
-        <div class="range-wrap">
-          <input type="range" id="prefLevel" min="0" max="100" step="1"
-            value="${Math.round(pref.level * 100)}" ${pref.frost ? '' : 'disabled'} />
-          <span class="pref-val" id="prefVal">${pref.frost ? Math.round(pref.level * 100) + '%' : '关'}</span>
         </div>
       </div>
 
@@ -251,20 +235,7 @@ function openPrefModal() {
     if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc3); }
   });
 
-  const sw = box.querySelector('#prefFrost');
   const mo = box.querySelector('#prefMotion');
-  const range = box.querySelector('#prefLevel');
-  const val = box.querySelector('#prefVal');
-
-  sw.addEventListener('click', () => {
-    pref.frost = !pref.frost;
-    sw.classList.toggle('on', pref.frost);
-    sw.setAttribute('aria-checked', String(pref.frost));
-    range.disabled = !pref.frost;
-    val.textContent = pref.frost ? Math.round(pref.level * 100) + '%' : '关';
-    applyUiPref(pref);
-    saveUiPref(pref);
-  });
 
   mo.addEventListener('click', () => {
     pref.motion = pref.motion === false;
@@ -273,13 +244,6 @@ function openPrefModal() {
     applyUiPref(pref);       // 立刻生效：关掉时正在播的动画会被压成 1ms
     saveUiPref(pref);
   });
-
-  range.addEventListener('input', () => {
-    pref.level = Math.min(1, Math.max(0, Number(range.value) / 100));
-    val.textContent = Math.round(pref.level * 100) + '%';
-    applyUiPref(pref);       // 拖动时实时预览，松手才落盘
-  });
-  range.addEventListener('change', () => saveUiPref(pref));
 }
 
 /* ---------- 入口 ---------- */
@@ -333,9 +297,24 @@ function inShell() {
   return p === 'file:' || p === 'tauri:';
 }
 
+/* 玩家名字：各壳共用 localStorage 的 df_name。
+   以前 local.js / net-lan.js 的 name()/setName() 是空实现，单机页改名既不落盘，
+   切到联机页又读回旧名字。这里在 Net 之上再兜一层，不依赖某个壳的实现是否齐全。 */
+const DF_NAME_KEY = 'df_name';
+function readName() {
+  let n = '';
+  try { n = Net.name() || ''; } catch (e) {}
+  if (n) return n;
+  try { return localStorage.getItem(DF_NAME_KEY) || ''; } catch (e) { return ''; }
+}
+function writeName(n) {
+  try { localStorage.setItem(DF_NAME_KEY, n); } catch (e) {}
+  try { Net.setName(n); } catch (e) {}
+}
+
 function renderEntry() {
   clearOverlays();          // 从牌桌退回来时别把上一局的弹窗/换人提示留在屏上
-  const saved = Net.name();
+  const saved = readName();
   const offline = !!Net.local;
   const canLan = !!Net.canLan;
   const lanUrl = canLan ? Net.lanUrl() : null;
@@ -391,7 +370,7 @@ function renderEntry() {
 
   $('#createBtn').addEventListener('click', () => {
     const n = ($('#myname').value || '').trim() || '玩家';
-    Net.setName(n);
+    writeName(n);
     pendingBtn($('#createBtn'), '创建中…');
     Net.createRoom(n);
   });
@@ -402,7 +381,7 @@ function renderEntry() {
       const n = ($('#myname').value || '').trim() || '玩家';
       const r = ($('#roomcode').value || '').trim().toUpperCase();
       if (!r) return toast('请输入对局码');
-      Net.setName(n);
+      writeName(n);
       pendingBtn(jb, '加入中…');
       Net.joinRoom(r, n);
     });
@@ -760,20 +739,28 @@ function checkAppUpdate() {
   const target = updateTarget();
   if (!target) return;                                  // 网页版不需要
   if (document.getElementById('updateBadge')) return;
-  fetch(serverBase() + target.manifest, { cache: 'no-store' })
+
+  const capsP = target.kind === 'desktop' ? probeUpdateCaps() : Promise.resolve(null);
+  const infoP = fetch(serverBase() + target.manifest, { cache: 'no-store' })
     .then(r => (r.ok ? r.json() : null))
-    .catch(() => null)
-    .then(info => {
-      if (!info || !info.version) return;
-      if (compareVer(info.version, window.DF_VERSION) <= 0) return;
-      if (document.getElementById('updateBadge')) return;
-      const b = document.createElement('button');
-      b.id = 'updateBadge';
-      b.title = `有新版本 v${info.version}（当前 v${window.DF_VERSION}）`;
-      b.innerHTML = '<span class="ub-dot"></span>新版本';
-      b.addEventListener('click', () => openUpdateDialog(info, target.kind));
-      document.body.appendChild(b);
+    .catch(() => null);
+
+  Promise.all([infoP, capsP]).then(([info, caps]) => {
+    if (!info || !info.version) return;
+    if (compareVer(info.version, window.DF_VERSION) <= 0) return;
+    if (document.getElementById('updateBadge')) return;
+    UI.updateCaps = caps;
+    const b = document.createElement('button');
+    b.id = 'updateBadge';
+    b.title = `有新版本 v${info.version}（当前 v${window.DF_VERSION}）`;
+    b.innerHTML = '<span class="ub-dot"></span>新版本';
+    /* 下载/安装进行中再点徽标：直接回到进度面板，别又弹一次「发现新版本」 */
+    b.addEventListener('click', () => {
+      if (UI.update) return showUpdatePanel();
+      openUpdateDialog(info, target.kind, caps);
     });
+    document.body.appendChild(b);
+  });
 }
 
 /* 桌面端该拿哪个包：清单里按系统分平台，没有就退回 items 第一条 */
@@ -793,8 +780,9 @@ function deskOS() {
 }
 
 /* 点「新版本」先问一句：版本号、体积、这一跳跨过了哪些改动、要下不下 */
-function openUpdateDialog(info, kind) {
+function openUpdateDialog(info, kind, caps) {
   const desktop = kind === 'desktop';
+  const inapp = desktop && !!caps && caps.mode === 'inapp';
   const cur = window.DF_VERSION || '';
   const pkg = desktop ? desktopPkg(info) : null;
   const bytes = pkg && pkg.bytes ? pkg.bytes : info.bytes;
@@ -814,17 +802,27 @@ function openUpdateDialog(info, kind) {
   }).join('');
   const rest = groups.length - shown.length;
 
-  /* 桌面版的「立即更新」只能把人带到下载页（没有原生安装桥），
-     所以文案要把下一步说清楚，别让人以为点完就自动装好了。
+  /* 桌面版分两条路：
+     · 壳支持应用内装（macOS）→「下载并安装」，一次点完；
+     · 装不了（Windows 轻量版走安装器、或从只读镜像里运行）→「前往下载」，
+       并且把装不了的原因说清楚（caps.note 就是干这个的）。
      体积那句优先用清单里的 sub（带 WebView2 / 芯片说明），没有就自己拼。 */
   const sizeLine = desktop
     ? (pkg && pkg.sub ? pkg.sub : ['v' + info.version, mb, '完整安装包'].filter(Boolean).join(' · '))
     : [mb, '完整安装包', '离线 · 同 Wi-Fi · 联机'].filter(Boolean).join(' · ');
-  const tail = desktop
-    ? (deskOS() === 'mac'
+
+  let tail;
+  if (inapp) {
+    tail = '下载与安装都在应用内完成，装好后提示重启；存档与设置不会丢。';
+  } else if (desktop) {
+    const how = deskOS() === 'mac'
       ? '下载后把「黑暗森林」拖进「应用程序」替换旧版即可，存档与设置不会丢。'
-      : '下载后运行安装程序覆盖安装即可，存档与设置不会丢。')
-    : '更新不会影响本机设置。';
+      : '下载后运行安装程序覆盖安装即可，存档与设置不会丢。';
+    const why = caps && caps.note ? caps.note + '。' : '';
+    tail = why + how;
+  } else {
+    tail = '更新不会影响本机设置。';
+  }
 
   openDialog({
     id: 'updateDialog',
@@ -837,9 +835,9 @@ function openUpdateDialog(info, kind) {
       ${rest > 0 ? `<p class="dlg-note">另有 ${rest} 个较早版本的改动未列出。</p>` : ''}
       ${clipped > 0 ? `<p class="dlg-note">另有 ${clipped} 条改动未列出。</p>` : ''}
       <p class="dlg-note">${tail}</p>`,
-    okText: desktop ? '前往下载' : '立即更新',
+    okText: inapp ? '下载并安装' : (desktop ? '前往下载' : '立即更新'),
     cancelText: '稍后再说',
-    onOk: () => downloadUpdate(info, kind),
+    onOk: () => (inapp ? startInAppUpdate(info, pkg) : downloadUpdate(info, kind)),
   });
 }
 
@@ -862,6 +860,240 @@ function updateGroups(info, cur, target) {
     if (items.length) out.push({ ver: target, items });
   }
   return out.sort((a, b) => compareVer(b.ver, a.ver));
+}
+
+/* ============================================================
+ * 应用内更新（桌面壳）
+ *
+ * 原生的那半边在 desktop-tauri/src-tauri/src/updater.rs：下载、挂载 dmg、
+ * 换掉 .app 都是 shell 级操作，webview 做不了。前端只管三件事：
+ *   1. 动手之前问一句壳能不能装（probeUpdateCaps）；装不了就老实走浏览器
+ *   2. 轮询进度画成进度条（不用事件总线：5Hz 轮询够了，也省得装插件）
+ *   3. 失败时把「改用浏览器下载」摆在手边，别让人卡死在一次失败里
+ * 关掉面板不会中断下载：原生线程照跑，右上角徽标继续显示百分比。
+ * ============================================================ */
+function tauriInvoke(cmd, args) {
+  const w = typeof window !== 'undefined' ? window : {};
+  const T = w.__TAURI_INTERNALS__;
+  if (!T || typeof T.invoke !== 'function') return null;
+  try { return Promise.resolve(T.invoke(cmd, args || {})); } catch (e) { return null; }
+}
+
+/* 壳能力 { platform, mode: 'inapp' | 'browser', note }。
+   老版本桌面壳没有这条命令 → null，调用方一律退回浏览器下载，行为不变。 */
+function probeUpdateCaps() {
+  const p = tauriInvoke('df_update_caps');
+  if (!p) return Promise.resolve(null);
+  return p.then(c => c || null).catch(() => null);
+}
+
+function errText(e) {
+  if (!e) return '更新失败';
+  if (typeof e === 'string') return e;
+  return String(e.message || e);
+}
+
+function fmtMB(bytes) {
+  if (!bytes) return '';
+  return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB';
+}
+
+/* 点「下载并安装」：原生开始拉包，前端立刻把面板摆出来 */
+function startInAppUpdate(info, pkg) {
+  if (!pkg || !pkg.url) return toast('暂时没有可用的安装包');
+  const url = /^https?:\/\//i.test(pkg.url) ? pkg.url : serverBase() + pkg.url;
+  const name = pkg.file || ('dark-forest-' + info.version + '.dmg');
+  UI.update = { phase: 'downloading', got: 0, total: pkg.bytes || 0, msg: '', info, pkg };
+  showUpdatePanel();
+
+  const p = tauriInvoke('df_update_start', { url, name, total: pkg.bytes || 0 });
+  if (!p) return updateFailed('这个版本还不支持应用内更新，可以改用浏览器下载');
+  p.then(() => schedulePoll(200)).catch(e => updateFailed(errText(e)));
+}
+
+function schedulePoll(ms) {
+  clearTimeout(UI.updateTimer);
+  UI.updateTimer = setTimeout(pollUpdate, ms);
+}
+
+/* 原生侧状态机：downloading → downloaded → installing → installed / error */
+function pollUpdate() {
+  if (!UI.update) return;
+  const p = tauriInvoke('df_update_state');
+  if (!p) return updateFailed('原生接口不可用，可以改用浏览器下载');
+
+  p.then(s => {
+    if (!s || !UI.update) return;
+    if (s.phase === 'error') return updateFailed(s.msg || '下载失败');
+
+    if (s.phase === 'downloading') {
+      UI.update.got = s.got || 0;
+      if (s.total) UI.update.total = s.total;
+      paintUpdate();
+      return schedulePoll(200);
+    }
+    if (s.phase === 'downloaded') {
+      // 下载完直接进安装，不再多问一次：用户点的就是「下载并安装」
+      UI.update.phase = 'installing';
+      UI.update.got = s.got || UI.update.total;
+      UI.update.msg = '正在挂载安装包…';
+      paintUpdate();
+      return installUpdate();
+    }
+    if (s.phase === 'installing') {
+      if (s.msg) UI.update.msg = s.msg;
+      paintUpdate();
+      return schedulePoll(350);
+    }
+    if (s.phase === 'installed') {
+      UI.update.phase = 'done';
+      paintUpdate();
+    }
+  }).catch(e => updateFailed(errText(e)));
+}
+
+function installUpdate() {
+  const p = tauriInvoke('df_update_install');
+  if (!p) return updateFailed('原生接口不可用，可以改用浏览器下载');
+  p.then(() => {
+    if (!UI.update) return;
+    UI.update.phase = 'done';
+    UI.update.msg = '';
+    paintUpdate();
+    document.getElementById('updateBadge')?.remove();   // 已经装好了，别再勾着人
+  }).catch(e => updateFailed(errText(e)));
+}
+
+function updateFailed(msg) {
+  clearTimeout(UI.updateTimer);
+  if (!UI.update) UI.update = { info: null, pkg: null };
+  UI.update.phase = 'error';
+  UI.update.msg = msg || '更新失败';
+  paintUpdate();
+}
+
+function showUpdatePanel() {
+  if (document.getElementById('updatePanel')) return paintUpdate();
+  const mask = document.createElement('div');
+  mask.id = 'updatePanel';
+  mask.className = 'dlg-mask';
+  mask.innerHTML = `
+    <div class="dlg up-dlg" role="dialog" aria-modal="true" aria-label="正在更新">
+      <div class="dlg-head"><b>正在更新</b><button class="mini-x" data-close title="关闭">×</button></div>
+      <div class="dlg-body"></div>
+      <div class="dlg-foot"></div>
+    </div>`;
+  document.body.appendChild(mask);
+  mask.addEventListener('click', e => { if (e.target === mask) closeUpdatePanel(); });
+  mask.querySelector('[data-close]').addEventListener('click', closeUpdatePanel);
+  paintUpdate();
+}
+
+function closeUpdatePanel() {
+  const mask = document.getElementById('updatePanel');
+  if (!mask) return;
+  fxExit(mask, '.dlg');
+}
+
+/* 一个函数负责「徽标 + 面板」两处显示：所有状态变化都从这里过，
+   免得出现"面板说在装、徽标还写着新版本"这种互相打脸的画面 */
+function paintUpdate() {
+  const u = UI.update;
+  if (!u) return;
+  const pct = u.total ? Math.min(100, Math.round((u.got || 0) * 100 / u.total)) : 0;
+  const ver = (u.info && u.info.version) || '';
+  const cur = window.DF_VERSION || '';
+
+  const badge = document.getElementById('updateBadge');
+  if (badge) {
+    if (u.phase === 'downloading') {
+      badge.disabled = true;
+      badge.innerHTML = `<span class="ub-dot"></span>${u.total ? pct + '%' : '下载中'}`;
+      badge.title = `正在下载 v${ver}`;
+    } else if (u.phase === 'installing') {
+      badge.disabled = true;
+      badge.innerHTML = '<span class="ub-dot"></span>安装中';
+      badge.title = `正在安装 v${ver}`;
+    } else if (u.phase === 'done') {
+      badge.disabled = false;
+      badge.innerHTML = '<span class="ub-dot"></span>重启生效';
+      badge.title = `v${ver} 已装好，重启应用生效`;
+    } else if (u.phase === 'error') {
+      badge.disabled = false;
+      badge.innerHTML = '<span class="ub-dot"></span>更新失败';
+      badge.title = u.msg || '更新失败';
+    }
+  }
+
+  const mask = document.getElementById('updatePanel');
+  if (!mask) return;
+  const head = mask.querySelector('.dlg-head b');
+  const body = mask.querySelector('.dlg-body');
+  const foot = mask.querySelector('.dlg-foot');
+
+  if (u.phase === 'downloading') {
+    if (head) head.textContent = '正在更新';
+    body.innerHTML = `
+      <div class="dlg-ver"><span>v${esc(ver)}</span><i>当前 v${esc(cur)}</i></div>
+      <div class="up-track"><div class="up-fill" style="width:${pct}%"></div></div>
+      <div class="up-meta"><span>正在下载…</span><span>${u.total ? pct + '% · ' + fmtMB(u.got) + ' / ' + fmtMB(u.total) : (fmtMB(u.got) || '')}</span></div>
+      <p class="dlg-note">下载完会自动安装。关掉这个面板不会中断下载。</p>`;
+    foot.style.display = '';
+    foot.innerHTML = '<button class="btn ghost" data-back>后台下载</button>';
+    foot.querySelector('[data-back]').addEventListener('click', closeUpdatePanel);
+    return;
+  }
+
+  if (u.phase === 'installing') {
+    if (head) head.textContent = '正在安装';
+    body.innerHTML = `
+      <div class="dlg-ver"><span>v${esc(ver)}</span><i>当前 v${esc(cur)}</i></div>
+      <div class="up-track is-busy"><div class="up-fill" style="width:100%"></div></div>
+      <div class="up-meta"><span>${esc(u.msg || '正在安装…')}</span><span>100%</span></div>
+      <p class="dlg-note">正在把新版本换进「应用程序」，这一步不要退出应用。</p>`;
+    foot.style.display = 'none';
+    foot.innerHTML = '';
+    return;
+  }
+
+  if (u.phase === 'done') {
+    if (head) head.textContent = '更新完成';
+    body.innerHTML = `
+      <div class="dlg-ver"><span>v${esc(ver)}</span><i>当前 v${esc(cur)}</i></div>
+      <div class="up-track is-done"><div class="up-fill" style="width:100%"></div></div>
+      <p class="dlg-note">新版本已装好，重启应用后生效。存档、设置与正在进行的对局都会保留。</p>`;
+    foot.style.display = '';
+    foot.innerHTML = `
+      <button class="btn ghost" data-later>稍后重启</button>
+      <button class="btn primary" data-restart>立即重启</button>`;
+    foot.querySelector('[data-later]').addEventListener('click', closeUpdatePanel);
+    foot.querySelector('[data-restart]').addEventListener('click', () => {
+      const p = tauriInvoke('df_update_relaunch');
+      if (!p) return toast('请手动退出并重新打开应用');
+      p.catch(e => toast(errText(e)));
+    });
+    return;
+  }
+
+  // error
+  if (head) head.textContent = '更新没能完成';
+  body.innerHTML = `
+    <div class="dlg-ver"><span>v${esc(ver)}</span><i>当前 v${esc(cur)}</i></div>
+    <p class="dlg-note up-err">${esc(u.msg || '更新失败')}</p>
+    <p class="dlg-note">可以改用浏览器下载安装包，把「黑暗森林」拖进「应用程序」替换旧版即可。</p>`;
+  foot.style.display = '';
+  foot.innerHTML = `
+    <button class="btn ghost" data-close2>关闭</button>
+    <button class="btn primary" data-browser>改用浏览器下载</button>`;
+  foot.querySelector('[data-close2]').addEventListener('click', closeUpdatePanel);
+  foot.querySelector('[data-browser]').addEventListener('click', () => {
+    const info = u.info, pkg = u.pkg;
+    closeUpdatePanel();
+    UI.update = null;
+    clearTimeout(UI.updateTimer);
+    if (info) downloadUpdate(info, 'desktop');
+    else if (pkg) openExternal(/^https?:\/\//i.test(pkg.url) ? pkg.url : serverBase() + pkg.url);
+  });
 }
 
 /* 真正的下载：
@@ -2598,7 +2830,7 @@ window.addEventListener('resize', () => {
   if ($('#aiFold')) syncAIFoldWide();
 });
 
-// 毛玻璃偏好要尽早生效：等到 DOMContentLoaded 再套会先闪一下不透明面板
+// 界面偏好要尽早生效：等到 DOMContentLoaded 再套会先闪一下不透明面板
 applyUiPref(loadUiPref());
 
 window.addEventListener('DOMContentLoaded', () => {

@@ -19,11 +19,11 @@
     ftl_coop:    { name: '超距广播·合作', short: '超距·合作', type: 'broadcast', face: 'coop', cost: 2, dist: INF, count: 2, desc: '利用宇宙的膜结构，在高维空间的投影产生信号' },
     ftl_disg:    { name: '超距广播·伪装', short: '超距·伪装', type: 'broadcast', face: 'disg', cost: 2, dist: INF, count: 2, desc: '利用宇宙的膜结构，在高维空间的投影产生信号' },
 
-    /* 占位：广播在结算翻面前，对外只露出"是哪种广播"，不露出合作/伪装。
-     * count 为 0，不进牌库，只用于前端渲染与文案。 */
-    star_hidden:   { name: '恒星广播', short: '恒星广播', type: 'broadcast', cost: 0, dist: 1,  count: 0, hidden: true, desc: '合作 / 伪装在结算时才翻开' },
-    cosmic_hidden: { name: '宇宙广播', short: '宇宙广播', type: 'broadcast', cost: 1, dist: 2,  count: 0, hidden: true, desc: '合作 / 伪装在结算时才翻开' },
-    ftl_hidden:    { name: '超距广播', short: '超距广播', type: 'broadcast', cost: 2, dist: INF, count: 0, hidden: true, desc: '合作 / 伪装在结算时才翻开' },
+    /* 占位：广播在结算翻面前，对外只有一个统一的「广播」。
+     * 恒星 / 宇宙 / 超距（射程）、合作 / 伪装（正反面）都不公开——
+     * 目标星系是公开的，一旦给出射程就等于把「发布者离目标 ≤ N 格」也公开了。
+     * count 为 0，不进牌库，只用于对外视图与文案。 */
+    broadcast_hidden: { name: '广播', short: '广播', type: 'broadcast', cost: 0, dist: INF, count: 0, hidden: true, desc: '发布时只公开谁朝哪个星系发了广播，射程与正反面等结算翻面时才公开' },
 
     /* ---------- 打击牌（14 张） ---------- */
     lock:       { name: '科技锁死', short: '科技锁死', type: 'strike', cost: 4,  level: INF, count: 2, immediate: true, disableBuilds: true, desc: '立即生效：拆掉目标星系玩家的全部已建卡牌（建设牌），不伤害玩家、不清能量、不动手牌' },
@@ -153,17 +153,18 @@
   const TOTAL_CARDS = Object.values(CARD_DEFS).reduce((s, c) => s + c.count, 0);
 
   /* ---------- 广播脱敏 ----------
-   * 广播牌正面写着合作/伪装，但那一面要在结算时才翻开。
-   * 在此之前对外只给"家族"（恒星 / 宇宙 / 超距），不给 face。
+   * 对外只有一个标识：broadcast_hidden / 「广播」。
+   * 六张广播牌一律映射到它，不留下任何能区分射程或正反面的字段——
+   * key 本身、名字、图标都不能分档，否则等于把射程告诉对手。
    */
   const HIDDEN_OF = {
-    star_coop: 'star_hidden',   star_disg: 'star_hidden',
-    cosmic_coop: 'cosmic_hidden', cosmic_disg: 'cosmic_hidden',
-    ftl_coop: 'ftl_hidden',     ftl_disg: 'ftl_hidden',
+    star_coop: 'broadcast_hidden',   star_disg: 'broadcast_hidden',
+    cosmic_coop: 'broadcast_hidden', cosmic_disg: 'broadcast_hidden',
+    ftl_coop: 'broadcast_hidden',    ftl_disg: 'broadcast_hidden',
   };
-  /** 把任意广播牌换成"未翻面"的对外标识 */
+  /** 把任意广播牌换成统一的「未公开」对外标识 */
   function hideFace(key) { return HIDDEN_OF[key] || key; }
-  /** 对外可见的广播名（不含合作/伪装） */
+  /** 对外可见的名字：一律「广播」，不含档位与正反面 */
   function familyName(key) { return CARD_DEFS[hideFace(key)].name; }
 
   /** 拆除建设牌能返还多少能量：建造费的一半，向下取整（6→3、3→1、2→1、8→4） */
