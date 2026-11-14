@@ -1,16 +1,17 @@
 {
-  "version": "1.0.27",
+  "version": "1.0.28",
   "title": "桌面版",
   "notes": [
-    "macOS 版新增更新提示：有新版本时右上角出现「新版本」，可查看改动并前往下载",
-    "Windows 版同样接入更新提示，不再需要自己去官网看版本号",
-    "下载入口新增 macOS 版（通用二进制，Intel 与 Apple 芯片通用）",
-    "「不出」按钮统一改为「结束回合」；新增按对局码观战",
-    "修复从房间返回主页时提示「连接已断开」不消失",
-    "修复 macOS 版点完「联机对局」回不到单人模式",
-    "macOS 图标改为系统设置那种大小（824 网格），不再比别的应用大一圈"
+    "修复在桌面版 / 安卓版点「联机对局」时画面闪一下（换页不再重播整屏入场动画）",
+    "创建对局时窗口够宽、席位与「添加对手」左右并排的情况下，不再显示多余的 −/+ 折叠符号",
+    "窄屏仍保留折叠「添加对手」的能力，拖宽 / 拖窄窗口会自动切换"
   ],
   "history": {
+    "1.0.28": [
+      "修复在桌面版 / 安卓版点「联机对局」时画面闪一下（换页不再重播整屏入场动画）",
+      "创建对局时窗口够宽、席位与「添加对手」左右并排的情况下，不再显示多余的 −/+ 折叠符号",
+      "窄屏仍保留折叠「添加对手」的能力，拖宽 / 拖窄窗口会自动切换"
+    ],
     "1.0.27": [
       "macOS 版新增更新提示：有新版本时右上角出现「新版本」，可查看改动并前往下载",
       "Windows 版同样接入更新提示，不再需要自己去官网看版本号",
@@ -127,42 +128,42 @@
     {
       "os": "mac",
       "label": "下载 macOS 版",
-      "sub": "v1.0.27 · 5.6 MB · 通用二进制（Intel / Apple 芯片）",
-      "url": "/download/dark-forest-1.0.27-macos-universal.dmg",
-      "file": "黑暗森林-v1.0.27-macos.dmg",
-      "bytes": 5879718
+      "sub": "v1.0.28 · 5.6 MB · 通用二进制（Intel / Apple 芯片）",
+      "url": "/download/dark-forest-1.0.28-macos-universal.dmg",
+      "file": "黑暗森林-v1.0.28-macos.dmg",
+      "bytes": 5885413
     },
     {
       "os": "win",
       "label": "下载 Windows 版（轻量）",
-      "sub": "v1.0.27 · 1.7 MB · 需 WebView2（缺失时自动装）",
-      "url": "/download/dark-forest-1.0.27-tauri-setup.exe",
-      "file": "黑暗森林-v1.0.27-win64-setup.exe",
-      "bytes": 1769062
+      "sub": "v1.0.28 · 1.7 MB · 需 WebView2（缺失时自动装）",
+      "url": "/download/dark-forest-1.0.28-tauri-setup.exe",
+      "file": "黑暗森林-v1.0.28-win64-setup.exe",
+      "bytes": 1771746
     },
     {
       "os": "win",
       "label": "下载 Windows 版（完整）",
-      "sub": "v1.0.27 · 零依赖，自带浏览器内核",
-      "url": "https://github.com/tediandeguandian/darkforest-web/releases/download/v1.0.27/dark-forest-1.0.27-win64-setup.exe"
+      "sub": "v1.0.28 · 零依赖，自带浏览器内核",
+      "url": "https://github.com/tediandeguandian/darkforest-web/releases/download/v1.0.28/dark-forest-1.0.28-win64-setup.exe"
     }
   ],
   "platforms": {
     "mac": {
       "os": "mac",
       "label": "下载 macOS 版",
-      "sub": "v1.0.27 · 5.6 MB · 通用二进制（Intel / Apple 芯片）",
-      "url": "/download/dark-forest-1.0.27-macos-universal.dmg",
-      "file": "黑暗森林-v1.0.27-macos.dmg",
-      "bytes": 5879718
+      "sub": "v1.0.28 · 5.6 MB · 通用二进制（Intel / Apple 芯片）",
+      "url": "/download/dark-forest-1.0.28-macos-universal.dmg",
+      "file": "黑暗森林-v1.0.28-macos.dmg",
+      "bytes": 5885413
     },
     "win": {
       "os": "win",
       "label": "下载 Windows 版（轻量）",
-      "sub": "v1.0.27 · 1.7 MB · 需 WebView2（缺失时自动装）",
-      "url": "/download/dark-forest-1.0.27-tauri-setup.exe",
-      "file": "黑暗森林-v1.0.27-win64-setup.exe",
-      "bytes": 1769062
+      "sub": "v1.0.28 · 1.7 MB · 需 WebView2（缺失时自动装）",
+      "url": "/download/dark-forest-1.0.28-tauri-setup.exe",
+      "file": "黑暗森林-v1.0.28-win64-setup.exe",
+      "bytes": 1771746
     }
   }
 }
