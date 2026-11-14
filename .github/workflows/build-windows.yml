@@ -57,7 +57,9 @@ jobs:
         working-directory: desktop-tauri/src-tauri/target/release/bundle/nsis
         run: |
           set -e
-          VER=$(node -p "require('$GITHUB_WORKSPACE/desktop/package.json').version")
+          # 别把 $GITHUB_WORKSPACE 直接塞进 require：Windows 上是 D:\a\... 形式，
+          # 反斜杠会被 node 当转义符吃掉（\a \d 全没），报 Cannot find module 'D:adarkforest-web...'
+          VER=$(cd "$GITHUB_WORKSPACE" && node -p "require('./desktop/package.json').version")
           for f in *.exe; do mv "$f" "dark-forest-${VER}-tauri-setup.exe"; done
           ls -lh
 
@@ -135,7 +137,9 @@ jobs:
         working-directory: desktop/release
         run: |
           set -e
-          VER=$(node -p "require('$GITHUB_WORKSPACE/desktop/package.json').version")
+          # 别把 $GITHUB_WORKSPACE 直接塞进 require：Windows 上是 D:\a\... 形式，
+          # 反斜杠会被 node 当转义符吃掉（\a \d 全没），报 Cannot find module 'D:adarkforest-web...'
+          VER=$(cd "$GITHUB_WORKSPACE" && node -p "require('./desktop/package.json').version")
           for f in *.exe; do mv "$f" "dark-forest-${VER}-win64-setup.exe"; done
           ls -lh
 
