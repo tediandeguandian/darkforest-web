@@ -1,6 +1,6 @@
 [package]
 name = "dark-forest"
-version = "1.0.27"
+version = "1.0.28"
 description = "三体 · 黑暗森林 桌面版"
 authors = ["shuwang"]
 edition = "2021"
