@@ -2,7 +2,7 @@
 
 > 给下一个接手的 AI 或人类开发者。读完这一份，你应该能在 10 分钟内跑起来、30 分钟内改第一个需求。
 >
-> 项目版本：**v1.0.30**（2026-11-14）
+> 项目版本：**v1.0.31**（2026-11-14）
 > 线上：<https://darkforest.dpdns.org>（Cloudflare Worker `dark-forest` + Durable Object）
 > 安装包：macOS dmg / Windows 轻量 + 完整 exe / `dark-forest.apk`（versionCode 37），
 > 全部由 `.github/workflows/release.yml` 在打 tag 时产出，**发版看第 7 节「发版一条命令」**
@@ -99,9 +99,12 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | Cloudflare | `worker/` | ✅ DO + Hibernation + alarm |
 | 联机前端 | `web/` | ✅ 平面牌桌 |
 | 安卓三合一 | `apk/` | ✅ 离线 / 局域网 / 在线 |
-| 测试 | — | 267（规则）+ 19（UI 冒烟）+ 34（DO） |
-| 观战 / 回放 / 战绩 | — | ⬜ 未开始 |
-| 房主移交 / 踢人 | — | ⬜ 未开始 |
+| 账号 | `worker/src/auth.js` / `server/auth.js` | ✅ 用户名+密码，邮箱可选绑定（验证码），找回密码 |
+| 观战席 | `worker/src/index.js` / `server/room.js` | ✅ 只读连接 + 大厅名单 + 开局前可入座/起身 |
+| 房主 | 同上 | ✅ 显式 `hostId`，可转让给**真人玩家**；房主走了自动交给下一位真人 |
+| 测试 | — | 416（规则）+ 385（UI）+ 29（联机语义）+ 17（账号 HTTP）+ 80（DO）+ 38（账号逻辑） |
+| 回放 / 战绩 | — | ⬜ 未开始 |
+| 踢人 / 封禁 | — | ⬜ 未开始（观战席有 20 人上限，超了挤掉最早的） |
 | 真机验证 APK | — | ⚠️ v1.0.19 已出包（签名可覆盖升级），仍未在真安卓机跑过 |
 
 ---
@@ -125,6 +128,10 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 版本号 | `1.0.x` 小步迭代（1.0.1 → 1.0.2 → … → 1.0.10），**不要自行跳大版本**（1.1.0/1.2.0）；`versionCode` 每次 +1 |
 | 打击目标显示 | **房间设置，默认「隐藏」**（本版起）；隐藏时飞行中只公开「谁 · 哪种 · 已飞几手」，**落地那一刻**才公布位置（战报 + 事件 + 5 秒播报）。发起者自己始终看得见自己的目标；科技锁死是即时牌，当回合的弃牌堆条目上会带目标。房主仍可在开局前切回「公开」 |
 | 观战 | 出局玩家继续看牌桌，但拿不到别人的坐标 |
+| 账号 | **用户名就是对局里显示的名字**，没有单独的昵称；邮箱**可选**，只在绑定时发验证码，忘了密码靠它找回。本地/局域网服务器默认不强制登录（`AUTH_REQUIRED=1` 才强制），线上 Worker 永远强制 |
+| 联机闸门 | 服务端说了算：前端先问 `/api/auth/me`，返回 `authRequired:false` 就放游客进；`true` 且没会话就弹面板。**只有前端拦是拦不住的**，Worker 在 WebSocket 升级前就 401 |
+| 观战席 | 一个房间最多 9 个**玩家席** + 独立观战席（上限 20）。观战席不占玩家位、没有 token、不参与对局。**开局前**座位与观战席可自由切换，开局后锁死（席位与引擎 players 下标绑死了） |
+| 房主 | 显式字段 `hostId`，不再是「0 号位」。可以转让给房间里任意**真人玩家**（人机不行、观战者不行），开局后不再允许转让。房主离开/席位被删时自动按顺序交给下一个真人 |
 
 完整的规则与边界裁决见 `三体黑暗森林桌游-网页化设计与AI方案.md` 第二章（尤其 2.10「边界情况的裁决」）。
 
@@ -207,6 +214,27 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
     以后改列数必然漂移。宽屏恒展开但**不覆盖** `UI.aiFoldOpen`，拖回窄屏还要
     把用户上次的选择还给他；`resize` 时也要同步（状态推送不保证在那时候来）。
 
+14. **Workers 连不了 25 端口，但能连 465** —— 平台封了 25（反垃圾），
+    `cloudflare:sockets` 的 `connect({ secureTransport: 'on' })` 能做隐式 TLS，
+    `smtp.email.cn:465` 实测 `EHLO → AUTH LOGIN → 235 → DATA → 250` 全程通。
+    别急着上 Resend/SendGrid：多一个账号、多一步域名验证，而项目已经有
+    `shuwang@email.cn` 的专用密码。**但 `cloudflare:sockets` 只有 Workers 认识**，
+    Node 测试里解析不了 —— 所以 `mail.js` 用**动态 import** 包一层，
+    不真发信就永不加载；esbuild 那行必须带 `--external:cloudflare:sockets`，
+    否则 `npm test` 直接编译失败。
+
+15. **席位重排会改所有人的 `playerId`** —— 引擎里 `players[i].id` 必须等于
+    `seats[i].playerId`，所以删人/换人后要重排。而每条 WebSocket 连接的
+    `attachment` 里存着一份 `playerId`，重排后不一起改，被挪动的人下一条消息
+    就会「席位不存在」。修法：attachment 里同时存**稳定的 token**，
+    `reattach()` 遍历所有连接按 token 找回新 id。`transferHost` 之后也一样——
+    房主身份跟着**席位对象**走，不是跟着旧的 `'pN'` 字符串。
+
+16. **账号全在一个 DO 里** —— `idFromName('global')`，单线程串行。好处是重名
+    检查天然没有竞态（KV 是最终一致，两个请求会同时看到"没人用"）；代价是
+    所有账号读写排在一条队列上，量级上限约数千用户。再大就换 D1 并分片，
+    别在这条路上硬撑。
+
 ---
 
 ## 7. 已知问题 / 风险
@@ -217,6 +245,10 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 真机未验证 | APK 只验证过编译、签名、冷启动资源加载 | 找一台安卓机装上，重点测局域网（8080 端口、`setAllowUniversalAccessFromFileURLs`） |
 | 免费额度 | DO 每天 10 万请求 / 10 万行写；人机局约 125 请求/局 | 一天 300 局左右，正常玩用不完；`python3 tools/usage.py` 可查 |
 | 断线重连 | 靠 localStorage token 回原席位 | 换设备/清缓存会丢席位 |
+| 邮箱凭据 | `SMTP_USER` / `SMTP_PASS` 必须在仓库 Secrets 里配（见第 7 节），**不能写进 wrangler.toml**（仓库公开） | 没配时发码会返回「邮件通道未配置」，注册仍然可用（邮箱是可选项），只是找不回密码 |
+| PBKDF2 的 CPU 预算 | `ITER = 60000`，免费 Workers 每请求 10 ms CPU | 若线上出现 1102（超 CPU）就降到 30k，并在提交信息里写明原因 |
+| 账号量级 | 单实例 DO，约数千用户 | 要扩容先换 D1 + 分片，别往 KV 上硬堆 |
+| 观战席不持久化玩家身份 | 只存 wid + 名字，刷新即退出观战 | 有意为之：观战不该留下"下次自动回到观战"的状态 |
 | 隐藏目标模式更粗野 | 看不到来袭打击，谁也没法临场补掩体/买飞船；AI 同样看不到，所以不会提前建盾 | 这是设计意图（把飞行窗口从"补盾"变成"赌命"）；实测全 AI 局仍能收尾，只是更快见血 |
 | APK 只验证到「装得上」 | v1.0.15 已重打包并核对签名/资源同源，但仍未在真机跑过 | 找一台安卓机装上，重点测同一个 Wi-Fi（8080 端口、`setAllowUniversalAccessFromFileURLs`） |
 | 房间不持久 | 内存房间 3 小时无人在线即回收；DO 房间靠存储 | 长局别中途全退 |
@@ -240,7 +272,7 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | 桌面版下载入口 | 入口页读 `web/download/desktop.json`。**轻量版（1.5 MB）放本站 `/download/` 直链**，完整版跳 GitHub Release；`tools/publish-github.sh <仓库> <PAT> <说明> <Tauri安装包>` 第 4 个参数给了安装包就自动拷进 `web/download/` 并改成本站直链，不给就退回外链 | 105 MB 不能走 Worker 静态资源（免费额度 100 MB/文件）；1.5 MB 随便放。UI 按 URL 是不是 `http(s)://` 开头自动切换：本站直链加 `download` 属性、箭头 ↓；外链 `target=_blank`、箭头 ↗ |
 | 域名迁移 | 1.0.14 起 `DF_SERVER` 全部指向 **darkforest.dpdns.org**；`shuwang.dpdns.org` 仍挂在同一个 Worker 上（老安装包里烙的是旧地址，删了它们就没法更新），两个自定义域名都写在 `worker/wrangler.toml` 的 routes 里 |
 | 更新弹窗的「新功能」来自 apk.json | `notes` 是目标版本的清单，`history` 是全部版本；前端按「本机版本 < v ≤ 目标版本」聚合，老版本用户一次看到这一跳跨过的全部改动。都来自 `apk/release-notes.json` | 每次发版在 `apk/release-notes.json` 加一条，键名必须和 manifest 的 versionName 一模一样；**永远只有一个整包，不做逐版本递进** |
-| 发版一条命令 | **1.0.30 起**：把版本号在三处改成一致（`desktop/package.json`、`desktop-tauri/src-tauri/tauri.conf.json`、`apk/AndroidManifest.xml` 的 versionName + versionCode），在 `apk/release-notes.json` 加一条同版本的说明，然后 `git tag v1.0.30 && git push origin v1.0.30`。`.github/workflows/release.yml` 会校验三处版本一致 → 建 Release（正文由 `tools/release-notes.js` 从 release-notes.json 生成）→ 并行跑 mac / win / apk 三个 reusable workflow → 收产物、回填 `web/download/`、重算清单、`wrangler deploy`、线上复验 | 以前是本地 `apk/build.sh` + `publish-github.sh` + `wrangler deploy` 手工三步，漏一步就是死链。**tag 必须与三处版本号一致**，prepare job 会直接拒掉不一致的 tag |
+| 发版一条命令 | **1.0.31 起账号相关要额外配 Secrets**（见第 8 节），其余不变。**1.0.30 起**：把版本号在三处改成一致（`desktop/package.json`、`desktop-tauri/src-tauri/tauri.conf.json`、`apk/AndroidManifest.xml` 的 versionName + versionCode），在 `apk/release-notes.json` 加一条同版本的说明，然后 `git tag v1.0.30 && git push origin v1.0.30`。`.github/workflows/release.yml` 会校验三处版本一致 → 建 Release（正文由 `tools/release-notes.js` 从 release-notes.json 生成）→ 并行跑 mac / win / apk 三个 reusable workflow → 收产物、回填 `web/download/`、重算清单、`wrangler deploy`、线上复验 | 以前是本地 `apk/build.sh` + `publish-github.sh` + `wrangler deploy` 手工三步，漏一步就是死链。**tag 必须与三处版本号一致**，prepare job 会直接拒掉不一致的 tag |
 | push main 会自动部署 | `.github/workflows/deploy-worker.yml`：动到 `web/ shared/ worker/ tools/` 就部署，`concurrency: worker-deploy` 防并发打架 | 只改 `handoff/` 或文档不会触发；部署前会跑 `tools/fetch-release-assets.sh` 按当前版本号回填安装包 |
 | 部署 job 必须 Node 22 | wrangler 4.x 硬性要求 `node >= 22`，用 20 会直接 `exit 1`（`Wrangler requires at least Node.js v22.0.0`），而 `npm ci` 只会给一条 EBADENGINE 警告，很容易以为是依赖问题 | 只有「要跑 wrangler」的 job 需要 22（`release.yml` 的 publish、`deploy-worker.yml` 的 deploy）；构建 job 保持 20 不受影响。`worker/package.json` 里加了 `engines` 做提示 |
 | Windows runner 的 `$GITHUB_WORKSPACE` 别塞进 `require()` | 它是 `D:\a\darkforest-web\darkforest-web`，拼进 `node -p "require('…/desktop/package.json')"` 时反斜杠被 node 当转义符吃掉（`\a`→`a`、`\d`→`d`），报 `Cannot find module 'D:adarkforest-webdarkforest-web/desktop/package.json'` | 用 `VER=$(cd "$GITHUB_WORKSPACE" && node -p "require('./desktop/package.json').version")`，在子 shell 里 cd 到根再用相对路径。`build-windows.yml` 的两个 job 都这么改的 |
@@ -256,6 +288,8 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
 | wrangler 登录凭据 | `~/.config/.wrangler/config/default.toml`（**不在项目里**） | 不要打包 |
 | APK 签名 keystore | `apk/df.keystore`，密码 `darkforest` | 要能覆盖升级就必须保留；公开仓库记得排除 |
 | 自定义域名 | `darkforest.dpdns.org` 绑定在 Cloudflare 账号下 | 换账号需重新绑定 |
+| 发信邮箱 | `shuwang@email.cn` + 专用密码，存在 GitHub 仓库 Secrets：`SMTP_USER` / `SMTP_PASS`（可选 `SMTP_HOST` / `SMTP_PORT` / `MAIL_FROM`） | **绝不写进 wrangler.toml**（仓库公开）。泄漏就立刻去邮箱后台换专用密码 |
+| Cloudflare 部署 | 仓库 Secrets：`CLOUDFLARE_API_TOKEN`（模板 Edit Cloudflare Workers）、`CLOUDFLARE_ACCOUNT_ID` | 缺这两个时 `deploy-worker` 会跳过部署并打 warning，线上不会更新 |
 
 ---
 
