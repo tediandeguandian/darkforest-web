@@ -1,0 +1,67 @@
+name: deploy-worker
+
+# 日常改完前端 push 到 main，线上自动更新。
+# 发版走 release.yml（tag 触发），那里也有一段相同的部署步骤，两边共用
+# tools/fetch-release-assets.sh 和同一个 concurrency 组。
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "web/**"
+      - "shared/**"
+      - "worker/**"
+      - "tools/**"
+  workflow_dispatch:
+
+concurrency:
+  group: worker-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: 部署到 Cloudflare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # 安装包不进 git（完整版 105 MB 超上限），但静态资源必须带上 dmg / 轻量 exe。
+      # 所以每次部署前按 desktop/package.json 的版本号从 Release 回填，
+      # 保证线上包和清单永远是同一个版本——否则 push 一次 main 就会把旧包推上去。
+      - name: 回填当前版本的安装包
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh tools/fetch-release-assets.sh
+
+      - name: 部署
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -e
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning::没配 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID，跳过部署。"
+            echo "  在仓库 Settings → Secrets and variables → Actions 里补上即可。"
+            exit 0
+          fi
+          cd worker
+          npm ci
+          npx wrangler deploy
+
+      # 部署不是原子的：wrangler 说成功，也可能正好赶上边缘节点还没刷新。
+      # 这里只做一次轻量确认，失败不红——真挂了会在下一步的页面里看到。
+      - name: 确认线上在跑
+        run: |
+          for i in 1 2 3; do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" https://darkforest.dpdns.org/ || echo 000)
+            echo "· 第 $i 次探测：HTTP $CODE"
+            [ "$CODE" = "200" ] && exit 0
+            sleep 5
+          done
+          echo "::warning::线上返回 $CODE，去 Cloudflare 面板看一下"

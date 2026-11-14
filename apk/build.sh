@@ -8,7 +8,9 @@
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/.." && pwd)          # 工程根：web/ shared/ 在这里
-VER=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml)
+# 用 $HERE 拼绝对路径：这个脚本经常被从仓库根目录调用（sh apk/build.sh，CI 里就是这样），
+# 此时 cwd 不是 apk/，写裸文件名会读不到 manifest，版本号会变成空串。
+VER=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' "$HERE/AndroidManifest.xml")
 
 # ---------- 0. 定位 SDK ----------
 # 顺序：显式 ANDROID_HOME > macOS 默认安装位置 > 构建容器里的老路径

@@ -104,3 +104,54 @@ node server/test-net.js                           # 断线语义 / 主动离开 
 node server/test-ui.js                            # 前端渲染冒烟（需要 jsdom）
 cd worker && npm test                             # Durable Object 逻辑
 ```
+
+## 发版（维护者）
+
+打一个 tag，剩下的交给 CI。**只需要做三件事**：
+
+```bash
+# 1. 改版本号（三处都要）
+#    desktop/package.json                 → version    （唯一真源，同步脚本会带给 Tauri）
+#    apk/AndroidManifest.xml              → versionName 改成同版本，versionCode 加 1
+# 2. 写本版改动
+#    apk/release-notes.json               → 加一个 "1.0.31": ["...", "..."] 条目
+# 3. 打 tag
+sh tools/sync-version.sh
+git commit -am "v1.0.31" && git push
+git tag v1.0.31 && git push origin v1.0.31
+```
+
+之后由 `.github/workflows/release.yml` 串起来：
+
+| 阶段 | 做什么 |
+|---|---|
+| `prepare` | 校验 tag 与 `desktop/package.json` 一致（不一致直接失败），建 Release，正文由 `release-notes.json` 生成 |
+| `mac` / `win` / `apk` | 调三个构建工作流，各自把产物传成 artifact 并挂到 Release |
+| `publish` | 收齐产物 → 放进 `web/download/` → 重算 `desktop.json` / `apk.json` → `wrangler deploy` |
+
+只改前端（`web/` `shared/` `worker/`）时不用发版：push 到 main 会触发 `deploy-worker.yml` 自动部署线上。
+
+### 一次性配置
+
+仓库 **Settings → Secrets and variables → Actions** 里填两项，之后不用再碰：
+
+| Secret | 取值 | 用途 |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens → **Edit Cloudflare Workers** 模板 | 部署 Worker |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 首页右下角 Account ID | 同上 |
+
+`GITHUB_TOKEN` 由 Actions 内置，不用配。**没配 Cloudflare 两项时**，发版仍会构建、建 Release、传附件，只跳过部署并给一条 warning。
+
+### 几个已经踩过的坑
+
+- **安装包不进 git**：完整版 exe 有 105 MB，超 GitHub 单文件上限。所以 `web/download/` 里的 dmg / exe 由 `tools/fetch-release-assets.sh` 在每次部署前按版本号从 Release 回填；`make-desktop-manifest.js` 发现本地没有包时会自动退回 Release 外链。
+- **别给 `build-macos.yml` / `build-windows.yml` 加 `push.tags`**：`release.yml` 已经在调它们，两条路都开着会构建两遍、并发上传同一个附件。
+- **`gh release upload` 不能带 `continue-on-error`**：Release 不存在时上传会失败，被吞掉之后 job 显示绿色，实际没传上去。现在先 `gh release view` 确认，失败就让 job 红。
+- **`wrangler.toml` 里的 `shuwang.dpdns.org`**：这条 custom domain 删掉时 Cloudflare 会连带删它的 DNS 记录，域名直接不解析。别动。
+
+### 回滚
+
+```bash
+cd worker && npx wrangler rollback          # 网站回到上一个部署版本
+gh release delete v1.0.31 --cleanup-tag     # 撤掉错的 Release（含 tag），修好后重打
+```

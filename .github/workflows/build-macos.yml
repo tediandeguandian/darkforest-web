@@ -1,13 +1,14 @@
 name: build-macos
 
 # macOS DMG 构建（Tauri 轻量版，通用二进制 x86_64 + arm64，最低 macOS 10.15）
-#   · 手动触发：Actions → build-macos → Run workflow
-#   · 打 tag（v1.0.24）时自动构建并挂到该 Release
+#   · 打 tag：由 release.yml 调度（workflow_call），构完自动挂到该 Release
+#   · 手动触发：Actions → build-macos → Run workflow（只出 artifact，不挂 Release）
+#
+# ⚠️ 别再给它加 push.tags：release.yml 已经会调它，两条路都开着就会同一个 tag
+#    构建两遍、并发上传同一个附件，白烧 macOS runner 的 10 倍计费额度。
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
 
 jobs:
   dmg:
@@ -93,11 +94,16 @@ jobs:
           path: desktop-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
+      # 以前这一步带 continue-on-error: true：Release 不存在时 gh 会失败，
+      # 但失败被吞掉，job 显示绿色，附件其实没传上去——「发了个没有安装包的版」。
+      # 现在先确认 Release 存在（release.yml 的 prepare 会建好），再传，出错就红。
       - name: 挂到 Release（只传附件，不改正文）
         if: startsWith(github.ref, 'refs/tags/')
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -e
+          gh release view "${GITHUB_REF_NAME}" >/dev/null
           gh release upload "${GITHUB_REF_NAME}" \
             desktop-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg --clobber
+          echo "· 已上传 $(ls desktop-tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg)"

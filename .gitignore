@@ -17,6 +17,10 @@ web/_preview.html
 /*.apk
 /*.dmg
 
+# Rust 依赖锁：Tauri 的 Cargo.lock 由各平台的构建自行解析，
+# 本机（Linux）生成的这份会带上 webkit2gtk 等平台依赖，入库反而干扰 macOS/Windows 构建
+desktop-tauri/src-tauri/Cargo.lock
+
 # 系统与编辑器
 .DS_Store
 *.swp

@@ -1,0 +1,201 @@
+name: release
+
+# ============================================================
+# 一次 tag = 发完一整版
+#
+#   git tag v1.0.31 && git push origin v1.0.31
+#
+# 做的事（按顺序）：
+#   prepare  —— 校验 tag 与 desktop/package.json 一致，建 Release 并写好正文
+#   mac      —— 调 build-macos.yml 出 dmg，挂 Release
+#   win      —— 调 build-windows.yml 出 Tauri / Electron 两个 exe，挂 Release
+#   apk      —— 调 build-apk.yml 出 apk + apk.json，挂 Release
+#   publish  —— 把三个产物收进 web/download/，重算清单，部署 Cloudflare Worker
+#
+# 以前是「本地跑脚本 + 网页点两下 + wrangler deploy」，七步里有四步靠手。
+# 现在只有两步：改版本号、打 tag。
+#
+# 需要的凭据（仓库 Settings → Secrets）：
+#   GITHUB_TOKEN          内置，不用配（权限靠下面的 permissions: contents: write）
+#   CLOUDFLARE_API_TOKEN  Workers Scripts:Edit
+#   CLOUDFLARE_ACCOUNT_ID Cloudflare 首页右下角
+# 没配 Cloudflare 两项时，publish 会跳过部署并给一条 warning，其余照常。
+# ============================================================
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+# 同一个 tag 重复触发时排队，别两个 publish 同时改 Worker
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: 建 Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 读版本号
+        id: ver
+        run: echo "version=$(node -p 'require("./desktop/package.json").version')" >> "$GITHUB_OUTPUT"
+
+      # 版本号走散是发版最常见的错：tag 打错一个数字，Release 标题、安装包
+      # 文件名、更新清单全跟着歪；AndroidManifest 忘了改，安卓包会带旧版本号。
+      # 在 prepare 一次拦住——别等到 macOS runner 跑完 20 分钟才在 apk job 里红。
+      - name: 校验三处版本号一致
+        run: |
+          set -e
+          VER="${{ steps.ver.outputs.version }}"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$VER" ]; then
+            echo "✗ tag（$GITHUB_REF_NAME）与 desktop/package.json（v$VER）不一致" >&2
+            echo "  先改版本号再打 tag，或者打对应的 tag。" >&2
+            exit 1
+          fi
+          NAME=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' apk/AndroidManifest.xml)
+          CODE=$(sed -n 's/.*android:versionCode="\([^"]*\)".*/\1/p' apk/AndroidManifest.xml)
+          if [ "$VER" != "$NAME" ]; then
+            echo "✗ apk/AndroidManifest.xml 的 versionName 是 $NAME，应为 $VER" >&2
+            echo "  改完记得把 versionCode（当前 $CODE）也加 1。" >&2
+            exit 1
+          fi
+          if ! grep -q "\"$VER\"" apk/release-notes.json; then
+            echo "::warning::apk/release-notes.json 里没有 $VER 的条目，Release 正文会是空的"
+          fi
+          echo "· 版本 $VER（versionCode $CODE）"
+
+      - name: 建 Release（正文取自 apk/release-notes.json）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          set -e
+          TAG="v$VER"
+
+          # 正文由版本清单生成，别在网页上手写——写了两处就会不一致
+          node tools/release-notes.js "$VER" > /tmp/release-notes.md
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "· Release $TAG 已存在，只更新正文"
+            gh release edit "$TAG" --notes-file /tmp/release-notes.md
+          else
+            echo "· 新建 Release $TAG"
+            gh release create "$TAG" --title "黑暗森林 $TAG" --notes-file /tmp/release-notes.md
+          fi
+
+  mac:
+    name: macOS
+    needs: prepare
+    permissions:
+      contents: write
+    # reusable workflow 不会自动继承调用方的 secrets，必须显式传
+    # （GITHUB_TOKEN 也算 secret，不传里面 gh release upload 直接 401）
+    secrets: inherit
+    uses: ./.github/workflows/build-macos.yml
+
+  win:
+    name: Windows
+    needs: prepare
+    permissions:
+      contents: write
+    secrets: inherit
+    uses: ./.github/workflows/build-windows.yml
+
+  apk:
+    name: Android
+    needs: prepare
+    permissions:
+      contents: write
+    secrets: inherit
+    uses: ./.github/workflows/build-apk.yml
+
+  publish:
+    name: 部署网站
+    needs: [prepare, mac, win, apk]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # 和 deploy-worker.yml 共用一个组：两个工作流都能改线上，不能同时进行
+    concurrency:
+      group: worker-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 收三端产物
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: 组装 web/download
+        run: |
+          set -e
+          ls -R dist | head -40
+          mkdir -p web/download
+          # 只清 dmg / exe：apk 由 build.sh 自己写，别在这里动
+          rm -f web/download/*.dmg web/download/*.exe
+          cp dist/dark-forest-macos-dmg/*.dmg web/download/
+          cp dist/dark-forest-tauri-setup/*.exe web/download/
+          [ -d dist/dark-forest-apk ] && cp dist/dark-forest-apk/*.apk dist/dark-forest-apk/apk.json web/download/ || true
+          ls -lh web/download
+
+      # 完整版 exe 有 105 MB，超过 Worker 静态资源单文件上限，不进本站；
+      # 清单里它会自动退回 GitHub Release 外链（make-desktop-manifest.js 处理）。
+      - name: 重算下载清单
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh tools/fetch-release-assets.sh
+
+      - name: 部署 Cloudflare Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -e
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::warning::没配 CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID，跳过部署。"
+            echo "  在仓库 Settings → Secrets and variables → Actions 里补上即可，"
+            echo "  或者手动跑: cd worker && npx wrangler deploy"
+            exit 0
+          fi
+          cd worker
+          npm ci
+          # wrangler deploy 会执行 wrangler.toml 里的 [build] command = "sh build.sh"，
+          # 把 web/ 与 shared/ 组装进 public/，不用手动跑
+          npx wrangler deploy
+
+      - name: 线上复验
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then exit 0; fi
+          sleep 5
+          echo "· 清单版本号："
+          curl -s https://darkforest.dpdns.org/download/desktop.json | node -e '
+            let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+              const j = JSON.parse(s);
+              console.log("  desktop.json →", j.version);
+              for (const it of j.items) console.log("   ", it.os, it.label, it.url);
+            });
+          '
+          curl -s https://darkforest.dpdns.org/download/apk.json | node -e '
+            let s = ""; process.stdin.on("data", d => s += d).on("end", () => {
+              const j = JSON.parse(s); console.log("  apk.json →", j.version, j.bytes, "bytes");
+            });
+          '
