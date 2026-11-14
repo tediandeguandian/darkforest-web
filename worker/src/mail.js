@@ -17,16 +17,12 @@
  *   MAIL_FROM  发件人地址，默认同 SMTP_USER
  *   MAIL_MODE  =console 时不真发，把验证码打在日志里并回传给调用方
  * ============================================================ */
-/* cloudflare:sockets 只有 Workers 运行时认识，Node 侧（本地测试）解析不了。
-   所以用动态 import：不真发信就永远不会去加载它，测试可以直接跑。 */
-let _connect = null;
-async function getConnect() {
-  if (!_connect) {
-    const mod = await import('cloudflare:sockets');
-    _connect = mod.connect;
-  }
-  return _connect;
-}
+/* 必须静态 import：动态 import('cloudflare:sockets') 在线上运行时并不可靠
+   （旧 module registry 下不认这个协议前缀），而代价是 Node 侧解析不了这个模块。
+   解决办法在测试那侧：worker/package.json 的 esbuild 用
+   --alias:cloudflare:sockets=./test-sockets-stub.mjs 把它换成空壳。
+   反正 MAIL_MODE=console 时压根不会调用 connect。 */
+import { connect } from 'cloudflare:sockets';
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -103,7 +99,6 @@ export async function sendMail(env, { to, subject, text }) {
 
   let sock;
   try {
-    const connect = await getConnect();
     sock = connect({ hostname: host, port }, { secureTransport: 'on' });
     const writer = sock.writable.getWriter();
     const rd = makeReader(sock.readable.getReader());
