@@ -1,5 +1,7 @@
 # 依赖
 node_modules/
+# 本机为了跑测试软链过来的依赖（指向仓库外路径，入库会变成坏链接）
+server/node_modules
 
 # 构建产物
 apk/build/
@@ -20,6 +22,10 @@ web/_preview.html
 # Rust 依赖锁：Tauri 的 Cargo.lock 由各平台的构建自行解析，
 # 本机（Linux）生成的这份会带上 webkit2gtk 等平台依赖，入库反而干扰 macOS/Windows 构建
 desktop-tauri/src-tauri/Cargo.lock
+
+# Rust 构建产物与 Tauri 生成代码（各平台构建时自行生成）
+desktop-tauri/src-tauri/target/
+desktop-tauri/src-tauri/gen/
 
 # 系统与编辑器
 .DS_Store
