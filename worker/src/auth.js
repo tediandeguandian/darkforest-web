@@ -346,6 +346,11 @@ export class Users {
       // 发信失败要把码作废，否则用户拿不到码却占用了配额
       await this.ctx.storage.delete('code:' + mail);
       console.error('send code failed:', sent.error);
+      /* 「没配邮箱」是部署问题，不是用户点错了。如实说出来——
+         一律回"请稍后再试"会让人一直重试，而重试一万次也好不了。 */
+      if (/未配置/.test(sent.error || '')) {
+        return { ok: false, error: '这台服务器还没配置发信邮箱，暂时发不出验证码' };
+      }
       return { ok: false, error: '验证码发送失败，请稍后再试' };
     }
     /* 本地开发/测试（MAIL_MODE=console）把码回给前端，方便不用真邮箱也能走通 */
