@@ -184,6 +184,28 @@ Node、Durable Object、浏览器 WebView 共用同一份 `rules.js`。不要在
     还有一层自举问题：**旧版本里没有检查代码，就没法提示自己去更新。**
     每次改这块，都要接受"这一版必须手动装，下一版起才会自动提示"。
 
+12. **壳内换页（单机 ⇄ 联机）会"闪一下"，根因是整页导航 + 入场动画重播** ——
+    `location.href = 'online.html'` 不是 SPA 切场景：新文档的 `#app` 首帧是空的，
+    要等脚本跑完 `render()` 才填进去，紧接着 `markScene()` 又挂 `scene-in` 播 440ms
+    整屏淡入。合起来就是「面板消失 → 从半透明重新淡入」。
+    逐帧录屏（CDP `Page.startScreencast`）看到 4 帧左右只剩背景，比"动画慢"更直观。
+    修法是**跨页交接**：跳前把 `#app.innerHTML` 存进 `sessionStorage`，目标页在
+    `<div id="app">` 之后放一段**同步**内联脚本贴回首帧（一定要在其它脚本之前，
+    放到 `DOMContentLoaded` 里就晚了），并打 `window.DF_HANDOFF=1` 让 `markScene()`
+    跳过这次入场。两个源 HTML（`web/local.html` / `web/index.html`）都要加——
+    APK / Electron / Tauri 的页面都是从它俩 sed 出来的。
+    `file://` 下两个页面未必共享 storage，所以用 `#df` hash 兜底；`markScene()` 里
+    用 `history.replaceState` 把 hash 抹掉，否则刷新又会命中交接脚本。
+    **别用 CSS 隐藏 `body` 等首屏** 之类的做法，那只是把空白换成黑屏。
+
+13. **大厅「添加对手」的 −/+ 只在单栏时才有意义** —— `.lobby-grid` 在
+    `max-width:820px` 变成一列，这时上下堆叠才需要折叠省空间；两栏并排时
+    席位与对手列表同时可见，折叠符号纯属多余，点了还会把右栏收成一条。
+    判定放在 JS（`matchMedia('(min-width: 821px)')`），结果打成 `.fold.wide` class，
+    CSS 也按这个 class 隐藏 `::after` —— 别一处写媒体查询、一处写 JS 断点，
+    以后改列数必然漂移。宽屏恒展开但**不覆盖** `UI.aiFoldOpen`，拖回窄屏还要
+    把用户上次的选择还给他；`resize` 时也要同步（状态推送不保证在那时候来）。
+
 ---
 
 ## 7. 已知问题 / 风险
