@@ -153,6 +153,42 @@ body.in-game::after{
   #app::before{background-position:48% 34%}
 }
 
+/* ------------------------------------------------------------
+ * 壳内换页（单机 ⇄ 联机）
+ * 两张独立 HTML，整页导航没法用 CSS transition，只能靠"暗场"接力：
+ *   旧页 #app 淡出 → 转场层跨页留着 → 新页 #app 淡入
+ * 两张页面的 body 背景是同一张松林图，所以中间那一下看不出换了文档。
+ * 类名由 ui.js 的 goShell / finishShellEnter 挂载，见那边注释。
+ * ------------------------------------------------------------ */
+#app.shell-out{opacity:0;transform:scale(.985);transition:opacity 180ms var(--ease),transform 200ms var(--ease)}
+#app.shell-in{opacity:0}
+#app.shell-fade{transition:opacity 240ms var(--ease-out)}
+
+#df-transit{
+  position:fixed;inset:0;z-index:80;display:grid;place-items:center;
+  pointer-events:none;opacity:0;transition:opacity 170ms var(--ease);
+}
+#df-transit::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(120% 80% at 50% 45%,rgba(5,7,11,.46),rgba(5,7,11,.84) 72%);
+}
+#df-transit.show{opacity:1}
+#df-transit .t-box{
+  position:relative;display:flex;flex-direction:column;align-items:center;gap:14px;
+  transition:opacity 110ms var(--ease);
+}
+#df-transit .spinner{width:30px;height:30px;margin:0;border-width:2px}
+#df-transit .t-txt{font-size:12px;letter-spacing:.18em;text-indent:.18em;color:var(--dim)}
+/* 旧页那一层浮上来（新页是接力的，不许重播，靠 .settle 关掉） */
+#df-transit:not(.settle) .t-box{animation:tIn 380ms var(--ease-out) both}
+@keyframes tIn{
+  from{opacity:0;transform:translateY(8px) scale(.92)}
+  to{opacity:1;transform:none}
+}
+/* 撤场时分两拍：提示语先没，遮罩慢慢退 —— 否则文字会糊在刚亮起来的面板上 */
+#df-transit.out .t-box{animation:none;opacity:0}
+
+
 /* [hidden] 要压过 .btn{display:inline-flex} 这类作者样式 */
 [hidden]{display:none!important}
 

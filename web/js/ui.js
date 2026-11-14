@@ -146,6 +146,7 @@ const UI = {
   arrowHtml: '',       // 上一帧画出来的 SVG，一样就不再写 DOM
   arrowLayer: null,    // 上一帧的 <svg id="arrowLayer">，换节点时缓存作废
   resetScroll: false,  // 本次渲染是否允许把滚动条归零（只在换场景时为真）
+  shellGoing: false,   // 壳内换页已经起跳（连点不再排第二次导航）
 };
 
 const $ = s => document.querySelector(s);
@@ -268,9 +269,15 @@ function pendingBtn(btn, text) {
    随后 DOMContentLoaded 里 render() 再挂上 scene-in 播 440ms 整屏入场 —— 合起来
    就是点「联机对局」时「面板消失 → 重新淡入」的那一下闪。
 
-   跳之前把当前画面存进 sessionStorage，目标页在 #app 之后同步贴回首帧；
+   现在这一段被拆成三拍，跨页接力：
+     ① 旧页：stashHandoff() 存画面，#app 挂 shell-out 淡出，升转场层
+     ② 目标页内联脚本（见 local.html / index.html）：首帧就挂着同一个转场层、
+        #app 透明 —— 两张页面的 body 背景是同一张松林图，看不出换了文档
+     ③ 目标页 render 完：finishShellEnter() 让新画面淡入、转场层淡出
+   动效关掉的设备退回老办法：直接贴上一页的画面顶住首帧，不播任何动画。
+
    #df 是兜底标记：file:// 下两张页面未必共享 sessionStorage，但 hash 一定带得过去，
-   目标页据此跳过本次入场动画（见 markScene）。 */
+   目标页据此知道"这是换页，不是直接打开"（见 markScene）。 */
 function stashHandoff() {
   try {
     const app = document.getElementById('app');
@@ -279,9 +286,72 @@ function stashHandoff() {
     }));
   } catch (e) {}
 }
+
+/* 转场层：一页已经暗下去、下一页还没画出来，中间得有东西占着屏幕。
+   两页各建一份，同 id / 同结构，看上去就是一层从头到尾没灭过。 */
+function shellTransit(label) {
+  if (document.getElementById('df-transit')) return;
+  const box = document.createElement('div');
+  box.id = 'df-transit';
+  box.setAttribute('data-at', String(Date.now()));
+  box.innerHTML = `<div class="t-box"><span class="spinner"></span><span class="t-txt">${esc(label)}</span></div>`;
+  document.body.appendChild(box);
+  void box.offsetWidth;                 // 先让 opacity:0 落一帧，才有得淡入
+  box.classList.add('show');
+}
+
+/* 新页渲完了：提示语先撤、遮罩慢慢退、新画面再淡入。
+   层刚挂上就撤会看成"闪一下"（本地 file:// 常常 30ms 就渲染完），
+   所以给它一个最短在场时间；等待期间新画面是全透明的，不会灰成一片。 */
+function finishShellEnter() {
+  const t = document.getElementById('df-transit');
+  const app = $('#app');
+  const at = t ? Number(t.getAttribute('data-at')) || 0 : 0;
+  const wait = t ? Math.max(0, 130 - (Date.now() - at)) : 0;
+
+  const go = () => {
+    if (t) {
+      t.classList.add('out');       // 文字先淡掉，别糊在刚亮起来的面板上
+      t.classList.remove('show');   // 遮罩随后退
+      setTimeout(() => t.remove(), 260);
+    }
+    // 错开 60ms：遮罩退一半时新画面才开始亮，接得上又不打架
+    setTimeout(() => {
+      if (!app || !app.classList.contains('shell-in')) return;
+      app.classList.add('shell-fade');
+      const drop = () => app.classList.remove('shell-in');
+      // 两帧：先让 transition 生效，改 opacity 才有过渡而不是瞬移
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(drop));
+      else setTimeout(drop, 16);
+      setTimeout(() => app.classList.remove('shell-fade'), 800);
+    }, 60);
+  };
+  if (wait) setTimeout(go, wait); else go();
+}
+
 function goShell(url) {
+  if (UI.shellGoing) return;            // 连点：一次就够，别排两次导航
+  UI.shellGoing = true;
+  // 文案跟着目的地走，调用点不用多传一个参数
+  const label = url.indexOf('online') >= 0 ? '正在进入联机对局' : '正在返回单人模式';
   stashHandoff();
-  location.href = url + '#df';
+  try { sessionStorage.setItem('df_handoff_to', label); } catch (e) {}
+
+  const app = $('#app');
+  if (!app || !motionOn()) { location.href = url + '#df'; return; }
+
+  shellTransit(label);
+  app.classList.add('shell-out');       // 淡出 + 微缩，露出后面的松林
+  // 等淡出走完再跳：导航会把动画硬切在最后那一帧，看着像"没播完"
+  setTimeout(() => { location.href = url + '#df'; }, 190);
+}
+
+/* 系统开了"减少动效"、或应用内关掉了动效，就都不播这一套 */
+function motionOn() {
+  try {
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  } catch (e) {}
+  return !(UI.pref && UI.pref.motion === false);
 }
 
 /* 是不是装在壳里（APK / Tauri / Electron）。
@@ -2829,12 +2899,14 @@ function markScene(name) {
   if (!app || UI.scene === name) return;
   UI.scene = name;
   clearTimeout(UI.sceneTimer);
-  /* 壳内换页：首帧已经贴了上一页的画面，这次再播整屏入场就是「闪一下」。
-     直接落到终态，并把 #df 从地址栏抹掉（否则刷新又会命中交接脚本）。 */
+  /* 壳内换页：首帧已经是一片暗场 + 转场层，这次再播整屏入场就是「闪一下」。
+     直接落到终态，交给 finishShellEnter 做"新画面淡入、转场层淡出"；
+     并把 #df 从地址栏抹掉（否则刷新又会命中交接脚本）。 */
   if (window.DF_HANDOFF) {
     window.DF_HANDOFF = 0;
     UI.sceneTimer = null;
     app.classList.remove('scene-in');
+    finishShellEnter();
     try {
       if (location.hash === '#df') history.replaceState(null, '', location.pathname + location.search);
     } catch (e) {}

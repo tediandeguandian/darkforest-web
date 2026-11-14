@@ -1594,6 +1594,92 @@ console.log('=== UI 33. 联机闸门：未登录先弹面板，登录后接着�
   ok(!!nameInput && nameInput.hasAttribute('readonly'), '登录后名字应由账号决定，不能再手改');
 }
 
+console.log('=== UI 34. 壳内换页：暗场过渡动画 ===');
+{
+  /* 两张页面是独立文档，整页导航做不了 CSS 过渡。方案是"暗场"接力：
+     旧页 #app 淡出 + 升转场层 → 新页首帧挂着同一层、#app 透明 → 渲染完交叉淡入。
+     这里静态查三处（两个 HTML + 样式 + 编排函数），再跑一遍真实的 goShell。 */
+  ['web/local.html', 'web/index.html'].forEach(f => {
+    const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    ok(/df-transit/.test(src), f + ' 换页时应升起转场层');
+    ok(/shell-in/.test(src), f + ' 首帧的 #app 应是透明的（等新画面淡入）');
+    ok(/df_handoff_to/.test(src), f + ' 转场文案要跨页带过去');
+    ok(/motion !== false/.test(src), f + ' 关掉动效时应退回"贴旧画面"的老路');
+  });
+  const css = fs.readFileSync(path.join(ROOT, 'web/style.css'), 'utf8');
+  ok(/#app\.shell-out/.test(css), '旧页淡出缺少 shell-out');
+  ok(/#app\.shell-in/.test(css) && /#app\.shell-fade/.test(css), '新页淡入缺少 shell-in / shell-fade');
+  ok(/#df-transit\s*\{/.test(css), '转场层缺少样式');
+  const uiSrc2 = fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8');
+  ok(/function shellTransit/.test(uiSrc2) && /function finishShellEnter/.test(uiSrc2),
+    'ui.js 应有转场层与收尾函数');
+  ok(/UI\.shellGoing/.test(uiSrc2), '连点只该排一次导航');
+
+  // 独立实例：location 赋值在 jsdom 里会报 "Not implemented: navigation"，吞掉别算失败
+  const { VirtualConsole } = require('jsdom');
+  const vc = new VirtualConsole();
+  vc.on('jsdomError', () => {});
+  const d2 = new JSDOM(
+    '<!doctype html><html><body><div id="app"><p class="old">旧画面</p></div></body></html>',
+    { url: 'http://localhost/', pretendToBeVisual: true, runScripts: 'outside-only', virtualConsole: vc }
+  );
+  const w2 = d2.window;
+  w2.eval(fs.readFileSync(path.join(ROOT, 'shared/cards.js'), 'utf8'));
+  w2.eval(`var Net = {
+    view: null, room: null, me: { playerId: 'p0' }, roomId: null, local: true, canLan: false, spectating: false,
+    __h: [], on(fn){ this.__h.push(fn); }, act(){}, leave(){}, setMode(){}, setStrikeTarget(){},
+    addAI(){}, removeAI(){}, start(){}, watch(){}, createRoom(){}, joinRoom(){},
+    name(){ return ''; }, setName(){}, autoResume(){ return false; }, hasSession(){ return false; }, lanUrl(){ return null; }
+  };`);
+  w2.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
+    window.__UI = UI; window.__goShell = goShell;
+    window.__shellTransit = shellTransit; window.__finishShellEnter = finishShellEnter;`);
+
+  w2.eval(`window.__UI.pref = { motion: true }; window.__goShell('online.html')`);
+  ok(!!w2.document.getElementById('df-transit'), '点「联机对局」应立刻升起转场层');
+  const tt = w2.document.querySelector('#df-transit .t-txt');
+  ok(!!tt && /正在进入联机对局/.test(tt.textContent),
+    '转场文案要说清去哪儿，实际 ' + (tt && tt.textContent));
+  ok(!!w2.document.querySelector('#df-transit .spinner'), '转场层里要有加载指示');
+  ok(w2.document.getElementById('app').classList.contains('shell-out'), '旧画面应淡出');
+  ok(!!w2.sessionStorage.getItem('df_handoff'), '跳转前应存下当前画面');
+  ok(/正在进入联机对局/.test(w2.sessionStorage.getItem('df_handoff_to') || ''),
+    '目的地文案应交给下一页');
+
+  // 连点：不能排第二次导航（否则会连跳两页）
+  w2.eval(`window.__goShell('index.html')`);
+  ok(w2.document.querySelectorAll('#df-transit').length === 1, '连点只该起一次更换');
+
+  // 新页那一刻：转场层已经在（直出、不淡入），#app 透明等着
+  w2.document.getElementById('app').classList.remove('shell-out');
+  w2.document.getElementById('app').classList.add('shell-in');
+  w2.eval(`document.getElementById('df-transit').setAttribute('data-at', String(Date.now() - 1000));`);
+  w2.eval(`window.__finishShellEnter()`);
+  await new Promise(r => setTimeout(r, 20));
+  const tr = w2.document.getElementById('df-transit');
+  ok(tr && tr.classList.contains('out'), '提示语应先撤，别糊在新面板上');
+  ok(tr && !tr.classList.contains('show'), '新画面到位后遮罩应退场');
+  await new Promise(r => setTimeout(r, 90));
+  ok(w2.document.getElementById('app').classList.contains('shell-fade'), '新画面应走淡入');
+  await new Promise(r => setTimeout(r, 90));
+  ok(!w2.document.getElementById('app').classList.contains('shell-in'), '淡入后 #app 应恢复不透明');
+
+  // 动效关掉：不铺转场层，直接导航（老行为，靠贴旧画面防白帧）
+  const d3 = new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>',
+    { url: 'http://localhost/', pretendToBeVisual: true, runScripts: 'outside-only', virtualConsole: vc });
+  const w3 = d3.window;
+  w3.eval(`var Net = { view:null, room:null, me:{playerId:'p0'}, roomId:null, local:true, canLan:false, spectating:false,
+    on(){}, act(){}, leave(){}, setMode(){}, setStrikeTarget(){}, addAI(){}, removeAI(){}, start(){}, watch(){},
+    createRoom(){}, joinRoom(){}, name(){return '';}, setName(){}, autoResume(){return false;}, hasSession(){return false;}, lanUrl(){return null;} };`);
+  w3.eval(fs.readFileSync(path.join(ROOT, 'web/js/ui.js'), 'utf8') + `
+    window.__UI = UI; window.__goShell = goShell;`);
+  w3.eval(`window.__UI.pref = { motion: false }; window.__goShell('online.html')`);
+  ok(!w3.document.getElementById('df-transit'), '关掉动效的设备不该再铺转场层');
+  ok(!w3.document.getElementById('app').classList.contains('shell-out'), '关掉动效的设备画面不该淡出');
+
+  w2.close(); w3.close();
+}
+
 console.log(`\nUI 结果: ${pass} 通过, ${fail} 失败`);
   process.exit(fail ? 1 : 0);
 })();

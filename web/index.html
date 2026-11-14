@@ -12,8 +12,9 @@
 <body>
 <div id="app"></div>
 <script>
-/* 同 local.html：壳内页面互跳时，首帧先贴上上一页的画面，避免整页导航白一帧
-   + 重播入场动画造成的「闪一下」。ui.js 读到 DF_HANDOFF 会跳过本次入场。 */
+/* 同 local.html：壳内换页走"暗场"接力 —— 旧页把 #app 淡出并升起 #df-transit，
+   本页首帧挂着同一层，ui.js 渲染完再让新画面淡入。动效关掉时退回贴旧画面。
+   两张页的 body 背景是同一张松林图，所以跨页看不出断点。 */
 (function () {
   var fresh = location.hash === '#df';
   var raw = null, app = document.getElementById('app');
@@ -21,12 +22,42 @@
   if (!raw && !fresh) return;
   try { sessionStorage.removeItem('df_handoff'); } catch (e) {}
   window.DF_HANDOFF = 1;
+
   var d = null;
   try { d = JSON.parse(raw || 'null'); } catch (e) {}
-  if (app && d && d.html && Date.now() - d.at < 3000) {
-    app.innerHTML = d.html;
-    app.style.pointerEvents = 'none';
+
+  var motion = true;
+  try {
+    var p = JSON.parse(localStorage.getItem('df_ui_pref') || 'null');
+    motion = !p || p.motion !== false;
+  } catch (e) {}
+  try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) motion = false; } catch (e) {}
+
+  if (!motion) {
+    if (app && d && d.html && Date.now() - d.at < 3000) {
+      app.innerHTML = d.html;
+      app.style.pointerEvents = 'none';
+    }
+    return;
   }
+
+  var to = '';
+  try { to = sessionStorage.getItem('df_handoff_to') || ''; } catch (e) {}
+  if (app) { app.classList.add('shell-in'); app.style.pointerEvents = 'none'; }
+  var box = document.createElement('div');
+  box.id = 'df-transit';
+  box.className = 'show settle';
+  box.setAttribute('data-at', String(Date.now()));
+  box.innerHTML = '<div class="t-box"><span class="spinner"></span><span class="t-txt"></span></div>';
+  box.querySelector('.t-txt').textContent = to || '正在切换';
+  document.body.appendChild(box);
+
+  setTimeout(function () {
+    var b = document.getElementById('df-transit');
+    if (!b) return;
+    b.remove();
+    if (app) { app.classList.remove('shell-in'); app.style.pointerEvents = ''; }
+  }, 4000);
 })();
 </script>
 <div class="conn" id="conn">连接已断开，正在重连…</div>

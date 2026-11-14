@@ -12,9 +12,12 @@
 <body>
 <div id="app"></div>
 <script>
-/* 壳内两个页面互相跳（单机 ⇄ 联机）：整页导航会先白一帧、再把整屏入场动画
-   重播一遍，看着就是「闪一下」。这里把上一页交过来的画面同步贴进 #app，
-   让首帧就不空；同时打标记，ui.js 的首次渲染会跳过入场动画。
+/* 壳内两个页面互相跳（单机 ⇄ 联机）：整页导航有两笔老账 —— 新文档的 #app 是空的
+   （先白一帧），入场动画又整屏重播一遍（看着"闪一下"）。这里做"暗场"接力：
+   旧页把 #app 淡出并升起 #df-transit，本页首帧就挂着同样的转场层，
+   ui.js 首次渲染后调 finishShellEnter 让新画面淡入、转场层撤掉。
+   两张页的 body 背景是同一张松林图，所以跨页看不出断点。
+   动效关掉时退回老办法：直接把上一页的画面贴进 #app，不播任何动画。
    必须放在 #app 之后、其它脚本之前 —— 越早执行越不会露出空白帧。 */
 (function () {
   var fresh = location.hash === '#df';
@@ -25,12 +28,44 @@
   // 标记本次是「壳内换页」：ui.js 的首次渲染不再播整屏入场动画。
   // hash 是兜底 —— file:// 下两个页面未必共享 sessionStorage，但 hash 一定带得过来。
   window.DF_HANDOFF = 1;
+
   var d = null;
   try { d = JSON.parse(raw || 'null'); } catch (e) {}
-  if (app && d && d.html && Date.now() - d.at < 3000) {
-    app.innerHTML = d.html;
-    app.style.pointerEvents = 'none';   // 占位画面上的按钮没绑事件，先别让人点到
+
+  var motion = true;
+  try {
+    var p = JSON.parse(localStorage.getItem('df_ui_pref') || 'null');
+    motion = !p || p.motion !== false;
+  } catch (e) {}
+  try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) motion = false; } catch (e) {}
+
+  if (!motion) {                     // 动效关：贴旧画面顶住首帧，就到此为止
+    if (app && d && d.html && Date.now() - d.at < 3000) {
+      app.innerHTML = d.html;
+      app.style.pointerEvents = 'none';   // 占位画面上的按钮没绑事件，先别让人点到
+    }
+    return;
   }
+
+  // 动效开：首帧就是暗场 + 转场层，接着旧页那一层继续，跨页不断
+  var to = '';
+  try { to = sessionStorage.getItem('df_handoff_to') || ''; } catch (e) {}
+  if (app) { app.classList.add('shell-in'); app.style.pointerEvents = 'none'; }
+  var box = document.createElement('div');
+  box.id = 'df-transit';
+  box.className = 'show settle';     // 直出、不淡入、不重播浮入：旧页那一层已经是亮的
+  box.setAttribute('data-at', String(Date.now()));
+  box.innerHTML = '<div class="t-box"><span class="spinner"></span><span class="t-txt"></span></div>';
+  box.querySelector('.t-txt').textContent = to || '正在切换';
+  document.body.appendChild(box);
+
+  // 兜底：ui.js 没跑起来 / render 抛错时，别把人困在暗场里
+  setTimeout(function () {
+    var b = document.getElementById('df-transit');
+    if (!b) return;
+    b.remove();
+    if (app) { app.classList.remove('shell-in'); app.style.pointerEvents = ''; }
+  }, 4000);
 })();
 </script>
 <div class="conn" id="conn">连接已断开，正在重连…</div>

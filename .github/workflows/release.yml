@@ -3,7 +3,7 @@ name: release
 # ============================================================
 # 一次 tag = 发完一整版
 #
-#   git tag v1.0.31 && git push origin v1.0.31
+#   git tag v1.0.32 && git push origin v1.0.32
 #
 # 做的事（按顺序）：
 #   prepare  —— 校验 tag 与 desktop/package.json 一致，建 Release 并写好正文
